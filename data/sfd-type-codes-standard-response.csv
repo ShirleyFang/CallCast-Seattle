@@ -1,0 +1,132 @@
+Response Type Code,Description,"Fire Unit (Could be Engine, Ladder or Aid Unit)",Engine,Ladder,AID Unit,MEDIC Unit,Battalion Chief (BC),Deputy 1 (Deputy Chief),SAFETY 2 (Chief) or Safety 4,STAFF 10 (Officer),Medic 44 (Officer),REHAB 1,Air 9,MCI1,HAZ 1,DECON 1,RESCUE 1,Fireboat,Patrol 4 (boat),MRN1,Hose Wagon,Air 240 or Air 260,Power 25,MVU 1,Total Units Dispatched
+1RED,Nearest engine or ladder Code Red,1,,,,,,,,,,,,,,,,,,,,,,,1
+3RED,Nearest engine and ladder Code Red,,1,1,,,1,,,,,,,,,,,,,,,,,,3
+4RED,Nearest engines and ladder Code Red,,2,1,,,1,,,,,,,,,,,,,,,,,,4
+ADV,Advised-Type code used primarily for documentation purposes,,,,,,,,,,,,,,,,,,,,,,,,0
+AFA,Auto Fire Alarm - Per 5-Level Response Plan,,,,,,,,,,,,,,,,,,,,,,,,0
+AFA4,AFA with Waterflow indication ,,2,1,,,1,,,,,,,,,,,,,,,,,,4
+AFAF,"Auto Fire Alarm, False",1,,,,,,,,,,,,,,,,,,,,,,,1
+AFAH,"Auto Fire Alarm, Hazardous Materials",,2,1,,,1,1,1,1,,,1,,1,,,,,,,,,,9
+AFAR,Auto Fire Alarm Residential,1,,,,,,,,,,,,,,,,,,,,,,,1
+AFARF,Auto Fire Alarm Residential False,1,,,,,,,,,,,,,,,,,,,,,,,1
+AID,Aid Response,1,,,,,,,,,,,,,,,,,,,,,,,1
+AIDF,Freeway Aid Response ,,2,,1,,,,,,,,,,,,,,,,,,,,3
+AIDYEL,Code Yellow Aid Response,1,,,,,,,,,,,,,,,,,,,,,,,1
+AIRCRASH,Aircraft Crash,,5,2,1,1,2,1,1,1,1,1,1,,,,,,,,,,,,17
+AIRSBY,Aircraft Standby,1,,,,,,,,,,,,,,,,,,,,,,,1
+ALBELL,Alarm Bell Ringing,1,,,,,,,,,,,,,,,,,,,,,,,1
+AMA,Auto Medical Alarm,1,,,,,,,,,,,,,,,,,,,,,,,1
+AWW14,Assault With Weapons MED14,2,,,1,2,1,,1,,1,,,,,,,,,,,,,,8
+AWW7,Assault With Weapons MED7,1,,,1,1,1,,,,1,,,,,,,,,,,,,,5
+BARK,Beauty Bark Fire,1,,,,,,,,,,,,,,,,,,,,,,,1
+BRSH,Brush Fire,,1,,,,,,,,,,,,,,,,,,,,,,1
+BRSHF,Brush Fire on Freeway,,3,,,,1,,,,,,,,,,,,,,,,,,4
+BRSHMJ,Brush Fire Major,,5,2,,1,2,1,1,1,,1,1,,,,,,,,,,,,15
+BRSHX,Brush Fire With Exposures,,2,1,,,1,,1,,,,,,,,,,,,,,,,5
+CAR,Car Fire,,1,,,,,,,,,,,,,,,,,,,,,,1
+CARF,Car Fire on Freeway,,2,,,,,,,,,,,,,,,,,,,,,,2
+CARX,Car Fire with Exposures,,2,1,,,1,,1,,,,,,,,,,,,,,,,5
+CHIM,Chimney Fire,,1,,,,,,,,,,,,,,,,,,,,,,1
+CO,Activated CO Detector,,,1,,,,,,,,,,,,,,,,,,,,,1
+COMED,Possible Patient,,1,1,,1,1,,,,,,,,,,,,,,,,,,4
+DUMP,Dumpster Fire,,1,,,,,,,,,,,,,,,,,,,,,,1
+DUMPX,Dumpster Fire with Exposures,,2,1,,,1,,1,,,,,,,,,,,,,,,,5
+ELEC,Electrical Problem,,1,,,,,,,,,,,,,,,,,,,,,,1
+EVENT,"Special Event (Mariners, Seahawks, Huskies, Seafair)",,,,,,,,,,,,,,,,,,,,,,,,0
+EXPMAJ,Major Explosion ,,5,2,1,1,1,1,1,1,1,1,1,,1,,,,,,,,,,17
+EXPMIN,Minor Explosion,,2,1,,,1,,,,1,,,,,,,,,,,,,,5
+0,False Alarm,1,,,,,,,,,,,,,,,,,,,,,,,1
+FASTB,Fast Back-up,,,,,,1,,1,,,,,,,,,,,,,,,,2
+FIB,Fire In Building,,5,2,1,1,2,1,1,1,1,1,1,,,,,,,,,,,,17
+FIBRES,Fire in Single Family Residence,,4,2,1,1,2,1,1,1,1,1,1,,,,,,,,,,,,16
+FIREF,Rubbish Fires on Freeway,,2,,,,,,,,,,,,,,,,,,,,,,2
+FIREWATCH,Firewatch,1,,,,,,,,,,,,,,,,,,,,,,,1
+FOS,Food on Stove,1,,,,,,,,,,,,,,,,,,,,,,,1
+FOSO,"Food on Stove, Out by Occupant",1,,,,,,,,,,,,,,,,,,,,,,,1
+FUELSP,Fuel Spill,1,,,,,,,,,,,,,,,,,,,,,,,1
+FURN,Furnace Problem,1,,,,,,,,,,,,,,,,,,,,,,,1
+GARAG,Detached Garage Fire ,,2,1,,,1,,1,,,,,,,,,,,,,,,,5
+HANGA,"Hang-up, Aid ",1,,,,,,,,,,,,,,,,,,,,,,,1
+HANGF,"Hang-up, Fire",1,,,,,,,,,,,,,,,,,,,,,,,1
+HAZ,"Hazardous Material, Spill/Leak",,2,1,1,1,2,1,1,1,,,1,,1,,,,,,,,,,12
+HAZADV,"Hazardous Material, Spill/Leak - Advised",,1,1,1,,,,,,,,,,,,,,,,,,,,3
+HAZD,"Hazardous Materials, Decontamination",,2,1,1,1,2,1,1,1,,,1,,1,1,,,,,,,,,13
+HAZF,Hazardous Materials with Fire,,5,2,1,1,3,1,1,1,1,,1,,1,1,,,,,,,,,19
+HAZMCI,Hazardous Materials MCI,,5,2,2,3,3,1,1,1,1,,1,1,1,1,,,,,,,,,23
+HAZRAD,Hazardous Materials Radiation,,1,1,1,,1,,,1,,,1,,1,,,,,,,,,,7
+HAZWHT,Hazardous Materials Reduced Response,,1,1,1,,1,,,1,,,1,,1,,,,,,,,,,7
+IAID,,1,,,,,1,,1,,1,,,,,,,,,,,,,,4
+ILBURN,Illegal Burn,1,,,,,,,,,,,,,,,,,,,,,,,1
+IMED,,1,,,,1,1,,1,,1,,,,,,,,,,,,,,5
+IMED7,,1,,,1,1,1,,1,,1,,,,,,,,,,,,,,6
+INVEOS,Out of Service Investigation ,1,,,,,,,,,,,,,,,,,,,,,,,1
+LINK,LINK Control Center (LCC),,,,,,1,,,,,,,,,,,,,,,,,,1
+MARFIRES,Marine Full Response on Shore,,5,2,1,1,2,1,1,1,1,1,1,,,,1,2,1,1,,,,,22
+MARFIREW,Marine Full Response on Water,,2,1,1,1,1,1,1,1,1,1,1,,,,1,2,1,1,,,,,17
+MARSINKS,Vessel Sinking on Shore,,1,1,1,,1,1,1,1,,,,,,,1,2,1,1,,,,,12
+MARSINKW,Vessel Sinking on Water,,1,1,1,,1,1,1,1,,,,,,,1,2,1,1,,,,,12
+MARSERV,Vessel Service Response,,,,,,,,,,,,,,,,,2,1,,,,,,3
+MCI,Multiple Casualty Incident ,,4,2,2,3,2,1,1,1,1,,1,1,,,,,,,,,,,19
+MED,Medic Response,1,,,,1,,,,,,,,,,,,,,,,,,,2
+MED1,Single Medic Unit,,,,,1,,,,,,,,,,,,,,,,,,,1
+MED14,MED14,3,,,,2,1,,,,1,,,,,,,,,,,,,,7
+MED6,MED6,1,,,1,1,,,,,,,,,,,,,,,,,,,3
+MED7,MED7,1,,,1,1,,,,,,,,,,,,,,,,,,,3
+MEDF,Medic Response Freeway,,2,,,1,,,,,,,,,,,,,,,,,,,3
+MONOF,Monorail Fire,,5,4,1,1,2,1,1,1,,1,1,,,,1,,,,,,,,19
+MUAID,"Mutual Aid, Aid Response",1,,,,,,,,,,,,,,,,,,,,,,,1
+MUAIR,"Mutual Aid, Air Unit",,,,,,1,,,,,,,,,,,,,,,1,,,2
+MUENG,"Mutual Aid, Engine",,1,,,,1,,,,,,,,,,,,,,,,,,2
+MUHAZ,"Mutual Aid, Hazmat",,1,1,1,1,1,,,1,,,1,,1,,,,,,,,,,8
+MULAD,"Mutual Aid, Ladder",,,1,,,1,,,,,,,,,,,,,,,,,,2
+MUMAR,"Mutual Aid, Marine",,1,,,1,1,,,,,,1,,,,,1,,1,,,,,6
+MUMED,Mutual Aid Medic,,,,,1,,,,,,,,,,,,,,,,,,,1
+MUSTAL,"Mutual Aid, ALS Strike Team",,,,,2,,,,,1,,,,,,,,,,,,,,3
+MUSTBL,"Mutual Aid, BLS Strike Team",5,,,,,,,,,1,,,,,,,,,,,,,,6
+MUSTE,,5,,,,,1,,,,,,,,,,,,,,,,,,6
+MUSTL,"Mutual Aid, Ladder Strike Team ",,,3,,,1,,,,,,,,,,,,,,,,,,4
+MUTF,"Mutual Aid, Structure Fire Task Force  ",,3,1,,,1,,,,,,,,,,,,,,,,,,5
+MUTFA,"Mutual Aid, Aircraft Task Force ",,2,1,,1,1,,,,,,,,,,,,,,,,,,5
+MUTFBL,"Mutual Aid, BLS Task Force ",,2,,2,,1,,,,1,,,,,,,,,,,,,,6
+MUTFTR,"Confined Space, Water, Trench, Rope, or Heavy Rescue Mutual Aid Task Force ",,,1,1,1,1,,,,,,,,,,1,,,,,,,,5
+MVI ,Motor Vehicle Incident,1,,,,,,,,,,,,,,,,,,,,,,,1
+MVIF,Motor Vehicle Incident Freeway,,2,,1,,,,,,,,,,,,,,,,,,,,3
+MVIFM,Motor Vehicle Incident Freeway Medic,,2,,1,1,,,,,,,,,,,,,,,,,,,4
+MVIM,Motor Vehicle Incident Medic,2,,,,1,,,,,,,,,,,,,,,,,,,3
+NGL,Natural Gas Leak ,,1,1,,,1,,,,,,,,,,,,,,,,,,3
+NGLMJ,Major Natural Gas Leak,,5,2,1,1,2,1,1,1,,,1,,1,,,,,,,,,,16
+NGO,"Natural Gas, Odor ",,,1,,,,,,,,,,,,,,,,,,,,,1
+ODOR,"Odor, Unknown",1,,,,,,,,,,,,,,,,,,,,,,,1
+PAASPD,"Public Assembly, Assist SPD",1,,,,,1,,,,,,,,,,,,,,,,,,2
+RECONMAR,Fire or Marine,1,,,,,,,,,,,,,,,,,,,,,,,1
+RECONRES,Water Rescue,1,,,,,,,,,,,,,,,,,,,,,,,1
+RESCAR,Automobile Extrication,,2,1,1,1,1,,1,,1,,,,,,,,,,,,,,8
+RESCS,Confined Space Rescue,,2,1,1,1,1,1,1,1,1,,1,,,,1,,,1,,,,,13
+RESELV,Elevator Rescue,,,1,,,,,,,,,,,,,,,,,,,,,1
+RESHVY,Heavy Rescue ,,2,1,1,1,1,1,1,1,1,,,,,,1,,,,,,,,11
+RESICE,Ice Rescue ,,2,1,1,1,1,1,1,1,1,,,,,,1,,1,,,,,,12
+RESLOC,Lock In/Lock Out ,,,1,,,,,,,,,,,,,,,,,,,,,1
+RESMAJ,Major Heavy Rescue,,5,2,1,1,2,1,1,1,1,,1,,,,1,,,,,,,,17
+RESROP,Rope Rescue ,,2,1,1,1,1,1,1,1,1,,,,,,1,,,,,,,,11
+RESSBW,"Rescue Standby, Water",,1,,,1,1,,,,,,,,,,1,1,1,1,,,,,7
+RESSBY,Rescue Standby,,1,1,1,1,1,,,,,,,,,,1,,,,,,,,6
+RESTR,Trench Rescue,,1,1,1,1,1,1,1,1,1,,1,,,,1,,,,,,,,11
+RESWA,"Rescue, Salt or Freshwater",,2,1,1,2,1,,1,1,1,,,,,,1,1,1,,,,,,13
+RESWAM,"Rescue, Salt or Freshwater MAJOR",,5,2,1,2,1,1,1,1,1,,,,,,1,1,1,1,,,,,19
+RMC,Chief Officer to RMS,,,,,,1,,,,,,,,,,,,,,,,,,1
+RUBBISH,"Rubbish Fire, No Exposure",,1,,,,,,,,,,,,,,,,,,,,,,1
+SHED,Detached Shed Fire ,,1,,,,,,,,,,,,,,,,,,,,,,1
+SPILL,Non-HazMat Spill/Leak ,1,,,,,,,,,,,,,,,,,,,,,,,1
+TANKER,Tanker Fire,,3,2,1,1,1,1,1,1,,1,1,,,,,,,,1,,,,14
+TEST,Test,,,,,,,,,,,,,,,,,,,,,,,,0
+TNKFRM,Tank Farm ,,5,2,1,1,2,1,1,1,1,,1,,1,1,,,,,1,,,,19
+TRAINF,Train Derailment with Fire and/or HazMat ,,5,2,1,1,2,1,1,1,1,,1,,1,1,,,,,1,,,,19
+TRANSF,Transformer Fire,,1,,,,,,,,,,,,,,,,,,,,,,1
+TUNAID,Aid Response to Tunnel Under Construction,,1,1,1,,1,,1,,,,,,,,,,,,,,,,5
+TUNF,Fire in Tunnel Under Construction,,5,2,1,1,1,1,1,1,1,1,1,,,,1,,,1,,,,1,19
+TUNMED,Medic Response to Tunnel Under Construction,,1,1,1,1,1,,,,,,,,,,,,,,,,,,5
+TUNRES,Rescue in Tunnel Under Construction,,2,1,1,1,1,1,1,1,1,,1,,,,1,,,1,,,,1,14
+VAULT,Vault Fire ,,2,1,1,1,1,,1,,,,1,,,,,,,,,,1,,9
+WATMI,Minor Water Job,,,1,,,,,,,,,,,,,,,,,,,,,1
+WATMJ,Major Water Job,,2,1,,,1,,1,,,,,,,,,,,,,,,,5
+WIRES,"Wires Down, Suspected Energized ",1,,,,,,,,,,,,,,,,,,,,,,,1

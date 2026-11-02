@@ -1,0 +1,39 @@
+[project]
+name = "cs6983-fall2026"
+version = "0.1.0"
+description = "CS 6983 Special Topics - Practical AI. Shared student environment."
+requires-python = "==3.13.*"
+
+dependencies = [
+    # --- Core data stack ---
+    "numpy",
+    "pandas",
+    "pyarrow",
+    "scipy",
+    "patsy",
+
+    # --- Machine learning ---
+    "scikit-learn",
+    "joblib",
+    "mlxtend",
+
+    # --- Visualization ---
+    "matplotlib",
+    "seaborn",
+    "plotly",
+    "pillow",
+
+    # --- Notebooks ---
+    "jupyterlab",
+    "ipykernel",
+    "ipywidgets",
+
+    # --- Deployment & serving ---
+    "flask",
+    "connexion[flask,swagger-ui]",
+    "streamlit",
+    "requests",
+]
+
+[tool.uv]
+# Students should never need to edit anything below this line.

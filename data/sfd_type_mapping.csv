@@ -1,0 +1,169 @@
+type,code,source,group,model_group,reason
+TEST - MIS TEST,TEST,sfd_code_exact,drop_test,drop,"test record, not a real call"
+Fast Back Up,FASTB,sfd_code_exact,followup,drop,extra units for an incident already on scene; 83% follow another call at the same address within 60 min (see notebook check)
+Auto Fire Alarm,AFA,sfd_code_exact,alarm,fire,"automatic alarm or detector went off, usually no real fire"
+Automatic Fire Alarm Resd,AFAR,sfd_code_exact,alarm,fire,"automatic alarm or detector went off, usually no real fire"
+Alarm Bell,ALBELL,sfd_code_exact,alarm,fire,"automatic alarm or detector went off, usually no real fire"
+Activated CO Detector,CO,sfd_code_exact,alarm,fire,carbon monoxide detector went off
+AFA4 - Auto Alarm 2 + 1 + 1,AFA4,sfd_code_exact,alarm,fire,"automatic alarm or detector went off, usually no real fire"
+Automatic Fire Alarm False,AFAF,sfd_code_exact,alarm,fire,"automatic alarm or detector went off, usually no real fire"
+Auto Alarm 1 + 1 + 1,,keyword,alarm,fire,"automatic alarm or detector went off, usually no real fire"
+Automatic Hazmat Alarm,,keyword,alarm,fire,"automatic alarm or detector went off, usually no real fire"
+WAFA - Automatic Fire Alarm,,keyword,alarm,fire,"automatic alarm or detector went off, usually no real fire"
+AFAH - Auto Alarm Hazmat,AFAH,sfd_code_exact,alarm,fire,"automatic alarm or detector went off, usually no real fire"
+AFAHI - Auto Alarm High Rise,,keyword,alarm,fire,"automatic alarm or detector went off, usually no real fire"
+Illegal Burn,ILBURN,sfd_code_exact,fire,fire,outdoor burning that is not allowed
+Rubbish Fire,RUBBISH,sfd_code_exact,fire,fire,real or possible fire
+Brush Fire,BRSH,sfd_code_exact,fire,fire,real or possible fire
+Encampment Fire,,keyword,fire,fire,real or possible fire
+Dumpster Fire,DUMP,sfd_code_exact,fire,fire,real or possible fire
+Car Fire,CAR,sfd_code_exact,fire,fire,real or possible fire
+Fire in Building,FIB,sfd_code_exact,fire,fire,real or possible fire
+Bark Fire,BARK,sfd_code_exact,fire,fire,real or possible fire
+Food On The Stove,FOS,sfd_code_exact,fire,fire,cooking fire
+Car Fire Freeway,CARF,sfd_code_exact,fire,fire,real or possible fire
+Tranformer Fire,TRANSF,sfd_code_exact,fire,fire,real or possible fire
+Brush Fire Freeway,BRSHF,sfd_code_exact,fire,fire,real or possible fire
+Dumpster Fire W/Exp.,DUMPX,sfd_code_exact,fire,fire,real or possible fire
+Fire Response Freeway,FIREF,sfd_code_inferred,fire,fire,real or possible fire
+Food On The Stove Out,FOSO,sfd_code_exact,fire,fire,"cooking fire, already out"
+Hang-Up- Fire,HANGF,sfd_code_exact,fire,fire,"911 caller hung up on a fire call, fire unit sent to check"
+Vault Fire (Electrical),VAULT,sfd_code_exact,fire,fire,real or possible fire
+Chimney Fire,CHIM,sfd_code_exact,fire,fire,real or possible fire
+Shed Fire,SHED,sfd_code_exact,fire,fire,real or possible fire
+Marine Fire On Shore,MARFIRES,sfd_code_exact,fire,fire,real or possible fire
+Brush Fire W/Exp.,BRSHX,sfd_code_exact,fire,fire,real or possible fire
+Car Fire W/Exp.,CARX,sfd_code_exact,fire,fire,real or possible fire
+Fire In A Highrise,,keyword,fire,fire,real or possible fire
+Garage Fire,GARAG,sfd_code_exact,fire,fire,real or possible fire
+RV Fire,,keyword,fire,fire,real or possible fire
+Marine Fire On Water,MARFIREW,sfd_code_exact,fire,fire,real or possible fire
+Train Derailment wFireHzmt,TRAINF,sfd_code_exact,fire,fire,real or possible fire
+Brush Fire Major,BRSHMJ,sfd_code_exact,fire,fire,real or possible fire
+Tanker Fire,TANKER,sfd_code_exact,fire,fire,real or possible fire
+Explosion Minor,EXPMIN,sfd_code_exact,fire,fire,real or possible fire
+Hazardous Material w/Fire,HAZF,sfd_code_exact,fire,fire,real or possible fire
+Tunnel Car Fire,,keyword,fire,fire,real or possible fire
+Tunnel Fire,TUNF,sfd_code_exact,fire,fire,real or possible fire
+Fire With Rescue,,keyword,fire,fire,real or possible fire
+Tank Farm,TNKFRM,sfd_code_exact,fire,fire,real or possible fire
+Tunnel Full Response,,manual,fire,fire,real or possible fire
+Medic Response,MED,sfd_code_exact,medical_als,medical,"serious medical call, needs a paramedic (medic unit)"
+Medic Response- Overdose,,keyword,medical_als,medical,"overdose, paramedic sent"
+Medic Response- 7 per Rule,MED7,sfd_code_exact,medical_als,medical,"serious medical call, needs a paramedic (medic unit)"
+Medic Response- 6 per Rule,MED6,sfd_code_exact,medical_als,medical,"serious medical call, needs a paramedic (medic unit)"
+Scenes Of Violence 7,AWW7,sfd_code_inferred,medical_als,medical,"injury at a violent scene, paramedic sent"
+Single Medic Unit,MED1,sfd_code_exact,medical_als,medical,"serious medical call, needs a paramedic (medic unit)"
+BC Medic Response- 6 per rule,,keyword,medical_als,medical,"serious medical call, needs a paramedic (medic unit)"
+Scenes Of Violence 14,AWW14,sfd_code_inferred,medical_als,medical,"injury at a violent scene, paramedics sent"
+BC Medic Response,,keyword,medical_als,medical,"serious medical call, needs a paramedic (medic unit)"
+COMED Poss Patient,COMED,sfd_code_exact,medical_als,medical,"SFD code COMED (Possible Patient), units sent to a CO call with a possible patient"
+Medic Response- Overdose 14,,keyword,medical_als,medical,"overdose, paramedics sent"
+Medic Response Freeway,MEDF,sfd_code_exact,medical_als,medical,"serious medical call, needs a paramedic (medic unit)"
+Multiple Medic Resp 14 Per,MED14,sfd_code_exact,medical_als,medical,"serious medical call, needs a paramedic (medic unit)"
+Scenes Of Violence Major,,keyword,medical_als,medical,"injury at a violent scene, paramedics sent"
+Multiple Casualty Incident,MCI,sfd_code_exact,medical_als,medical,"many people hurt, paramedics sent"
+Encampment Medic,,keyword,medical_als,medical,"serious medical call, needs a paramedic (medic unit)"
+BC Medic Response- 7 per Rule,,keyword,medical_als,medical,"serious medical call, needs a paramedic (medic unit)"
+Med Resp- 14 Mem. Rule Freeway,,keyword,medical_als,medical,"serious medical call, needs a paramedic (medic unit)"
+Med Resp- 6 Mem. Rule Freeway,,keyword,medical_als,medical,"serious medical call, needs a paramedic (medic unit)"
+Tunnel Medic,TUNMED,sfd_code_exact,medical_als,medical,"serious medical call, needs a paramedic (medic unit)"
+BC Med Response Overdose,,keyword,medical_als,medical,"overdose, paramedic sent"
+HazMat MCI,HAZMCI,sfd_code_exact,medical_als,medical,"hazardous material with many people hurt, paramedics sent"
+Multiple Casualty Incident Maj,MCI,sfd_code_inferred,medical_als,medical,"many people hurt, paramedics sent"
+Aid Response,AID,sfd_code_exact,medical_bls,medical,"basic medical call, handled by an aid unit (EMTs)"
+Low Acuity Response,,manual,medical_bls,medical,"low-acuity medical call that SFD still responds to; in 2025 it fell from 3947 to 1562 while Aid Response Yellow rose from 1070 to 4748, so the same calls moved between the two codes"
+Aid Response Yellow,AIDYEL,sfd_code_exact,medical_bls,medical,"basic medical call, handled by an aid unit (EMTs)"
+Automatic Medical Alarm,AMA,sfd_code_exact,medical_bls,medical,"medical alert device went off, aid unit checks on the person"
+Hang-Up- Aid,HANGA,sfd_code_exact,medical_bls,medical,"911 caller hung up on a medical call, aid unit sent to check"
+Scenes Of Violence Aid,IAID,sfd_code_inferred,medical_bls,medical,"minor injury at a violent scene, aid unit sent"
+Aid Response Freeway,AIDF,sfd_code_exact,medical_bls,medical,"basic medical call, handled by an aid unit (EMTs)"
+BC Aid Response,,keyword,medical_bls,medical,"basic medical call, handled by an aid unit (EMTs)"
+Encampment Aid,,keyword,medical_bls,medical,"basic medical call, handled by an aid unit (EMTs)"
+BC Aid Response Yellow,,keyword,medical_bls,medical,"basic medical call, handled by an aid unit (EMTs)"
+Tunnel Aid,TUNAID,sfd_code_exact,medical_bls,medical,"basic medical call, handled by an aid unit (EMTs)"
+Aid Resp Infectious,,keyword,medical_bls,medical,"basic medical call, handled by an aid unit (EMTs)"
+LINK - Link Control Center,LINK,sfd_code_exact,internal_admin,non_emergency,"SFD code LINK, call from the Link light rail control center"
+RMC Chief,RMC,sfd_code_exact,internal_admin,non_emergency,"SFD code RMC, chief officer record"
+Help the Fire Fighter,,manual,internal_admin,non_emergency,"firefighter in trouble, internal emergency; not verified as a follow-up, so kept"
+Reduce Resp Opposite Tunnel,,keyword,internal_admin,non_emergency,"change to a tunnel response; not verified as a follow-up, so kept"
+Primary Incident,,keyword,internal_admin,non_emergency,"administrative record, meaning not documented"
+Mayday Incident,,manual,internal_admin,non_emergency,"firefighter in trouble, internal emergency; not verified as a follow-up, so kept"
+Mutual Aid- Medic,MUMED,sfd_code_exact,mutual_aid,non_emergency,"SFD helping another city; kept as a call, address outside Seattle (exclude from area split)"
+Mutual Aid- Ladder,MULAD,sfd_code_exact,mutual_aid,non_emergency,"SFD helping another city; kept as a call, address outside Seattle (exclude from area split)"
+Mutual Aid- Engine,MUENG,sfd_code_exact,mutual_aid,non_emergency,"SFD helping another city; kept as a call, address outside Seattle (exclude from area split)"
+Mutual Aid- Aid,MUAID,sfd_code_exact,mutual_aid,non_emergency,"SFD helping another city; kept as a call, address outside Seattle (exclude from area split)"
+Mutual Aid- Marine,MUMAR,sfd_code_exact,mutual_aid,non_emergency,"SFD helping another city; kept as a call, address outside Seattle (exclude from area split)"
+Mutual Aid- Task Force,MUTF,sfd_code_inferred,mutual_aid,non_emergency,"SFD helping another city; kept as a call, address outside Seattle (exclude from area split)"
+Mutual Aid- Hazmat,MUHAZ,sfd_code_exact,mutual_aid,non_emergency,"SFD helping another city; kept as a call, address outside Seattle (exclude from area split)"
+Mutual Aid- Strike Eng.,MUSTE,sfd_code_inferred,mutual_aid,non_emergency,"SFD helping another city; kept as a call, address outside Seattle (exclude from area split)"
+Mutual Aid- Tech Res,MUTFTR,sfd_code_inferred,mutual_aid,non_emergency,"SFD helping another city; kept as a call, address outside Seattle (exclude from area split)"
+Mutual Aid  Basic Life,MUSTBL,sfd_code_exact,mutual_aid,non_emergency,"SFD helping another city; kept as a call, address outside Seattle (exclude from area split)"
+Mutual Aid- Adv. Life,MUSTAL,sfd_code_exact,mutual_aid,non_emergency,"SFD helping another city; kept as a call, address outside Seattle (exclude from area split)"
+Mutual Aid- Air,MUAIR,sfd_code_exact,mutual_aid,non_emergency,"SFD helping another city; kept as a call, address outside Seattle (exclude from area split)"
+Mutual Aid- Strike Team Lad,MUSTL,sfd_code_exact,mutual_aid,non_emergency,"SFD helping another city; kept as a call, address outside Seattle (exclude from area split)"
+Triaged Incident,,manual,referral,non_emergency,call triaged or passed to a nurse line or private ambulance; kept as a call; series stops 2025-05-31 and no other type absorbs it (decide at modeling stage)
+Nurseline/AMR,,manual,referral,non_emergency,call triaged or passed to a nurse line or private ambulance; kept as a call; series stops 2025-05-31 and no other type absorbs it (decide at modeling stage)
+Trans to AMR,,manual,referral,non_emergency,"patient transferred to private ambulance (AMR); not a hand-off after an SFD record (2.7% follow a medical call within 60 min, chance level)"
+Crisis Center,,manual,referral,non_emergency,call referred to a crisis line
+Low Acuity Referral,,manual,referral,non_emergency,low-acuity call referred to another service
+Poison Control,,manual,referral,non_emergency,call referred to poison control
+Referral To Agency,,manual,referral,non_emergency,call referred to another agency
+ANTIB - Antibiotic Delivery,,manual,referral,non_emergency,medicine delivery request
+EVENT - Special Event,EVENT,sfd_code_exact,standby_event,non_emergency,"units posted at a planned large event (games, Seafair); handled by dispatch"
+FIREWATCH,FIREWATCH,sfd_code_exact,standby_event,non_emergency,"SFD code FIREWATCH, one unit posted to watch a site; not verified as a follow-up, so kept"
+Rescue Standby,RESSBY,sfd_code_exact,standby_event,non_emergency,units sent to stand by at a scene or site
+Water Rescue Standby,RESSBW,sfd_code_exact,standby_event,non_emergency,units sent to stand by at a scene or site
+Tunnel Standby,,keyword,standby_event,non_emergency,units sent to stand by at a scene or site
+Law Enforcement Standby,,keyword,standby_event,non_emergency,units sent to stand by at a scene or site
+Aircraft Standby,AIRSBY,sfd_code_exact,standby_event,non_emergency,units sent to stand by at a scene or site
+Tunnel Rescue Standby,,keyword,standby_event,non_emergency,units sent to stand by at a scene or site
+Water Job Minor,WATMI,sfd_code_exact,hazard_utility,other,flooding or burst pipe
+Natural Gas Odor,NGO,sfd_code_exact,hazard_utility,other,"gas, electrical, spill or water hazard"
+Unk Odor,ODOR,sfd_code_exact,hazard_utility,other,"gas, electrical, spill or water hazard"
+Wires Down,WIRES,sfd_code_exact,hazard_utility,other,power lines down
+Fuel Spill,FUELSP,sfd_code_exact,hazard_utility,other,"gas, electrical, spill or water hazard"
+Electrical Problem,ELEC,sfd_code_exact,hazard_utility,other,"gas, electrical, spill or water hazard"
+Natural Gas Leak,NGL,sfd_code_exact,hazard_utility,other,"gas, electrical, spill or water hazard"
+Spill- Non-Hazmat,SPILL,sfd_code_exact,hazard_utility,other,"gas, electrical, spill or water hazard"
+HazMat Reduced,HAZWHT,sfd_code_exact,hazard_utility,other,"gas, electrical, spill or water hazard"
+Water Job Major,WATMJ,sfd_code_exact,hazard_utility,other,major flooding or burst pipe
+HAZADV - Hazmat Advised,HAZADV,sfd_code_exact,hazard_utility,other,"gas, electrical, spill or water hazard"
+Hazardous Mat- Spill-Leak,HAZ,sfd_code_exact,hazard_utility,other,"gas, electrical, spill or water hazard"
+Natural Gas Leak Major,NGLMJ,sfd_code_exact,hazard_utility,other,"gas, electrical, spill or water hazard"
+Vault Advised,,keyword,hazard_utility,other,"gas, electrical, spill or water hazard"
+Energy Response,,keyword,hazard_utility,other,"gas, electrical, spill or water hazard"
+Furnace Problem,FURN,sfd_code_exact,hazard_utility,other,"gas, electrical, spill or water hazard"
+Energy Advised,,keyword,hazard_utility,other,"gas, electrical, spill or water hazard"
+Hazardous Decon,HAZD,sfd_code_exact,hazard_utility,other,"gas, electrical, spill or water hazard"
+Hazmat Radiation,HAZRAD,sfd_code_exact,hazard_utility,other,"gas, electrical, spill or water hazard"
+Rescue Elevator,RESELV,sfd_code_exact,rescue,other,"person stuck or in danger (elevator, water, extrication, etc.)"
+Rescue Lock In/Out,RESLOC,sfd_code_exact,rescue,other,"person stuck or in danger (elevator, water, extrication, etc.)"
+Rescue Extrication,RESCAR,sfd_code_inferred,rescue,other,"person stuck or in danger (elevator, water, extrication, etc.)"
+Water Rescue Response,RESWA,sfd_code_inferred,rescue,other,"person stuck or in danger (elevator, water, extrication, etc.)"
+Marine Service Response,MARSERV,sfd_code_inferred,rescue,other,"person stuck or in danger (elevator, water, extrication, etc.)"
+Rescue Rope,RESROP,sfd_code_exact,rescue,other,"person stuck or in danger (elevator, water, extrication, etc.)"
+Vessel Sinking On Shore,MARSINKS,sfd_code_exact,rescue,other,"person stuck or in danger (elevator, water, extrication, etc.)"
+Vessel Sinking On Water,MARSINKW,sfd_code_exact,rescue,other,"person stuck or in danger (elevator, water, extrication, etc.)"
+Rescue Confined Space,RESCS,sfd_code_exact,rescue,other,"person stuck or in danger (elevator, water, extrication, etc.)"
+Rescue Heavy Major,RESMAJ,sfd_code_exact,rescue,other,"person stuck or in danger (elevator, water, extrication, etc.)"
+Rescue Trench,RESTR,sfd_code_exact,rescue,other,"person stuck or in danger (elevator, water, extrication, etc.)"
+Water Rescue Response Major,RESWAM,sfd_code_exact,rescue,other,"person stuck or in danger (elevator, water, extrication, etc.)"
+Rescue Ice,RESICE,sfd_code_exact,rescue,other,"person stuck or in danger (elevator, water, extrication, etc.)"
+Tunnel Rescue Extrication,TUNRES,sfd_code_exact,rescue,other,"person stuck or in danger (elevator, water, extrication, etc.)"
+MVI - Motor Vehicle Incident,MVI,sfd_code_exact,traffic,other,vehicle collision
+MVI Freeway,MVIF,sfd_code_exact,traffic,other,vehicle collision
+MVI Medic,MVIM,sfd_code_exact,traffic,other,"vehicle collision with injuries, paramedic sent"
+MVI Freeway Medic,MVIFM,sfd_code_exact,traffic,other,"vehicle collision on freeway with injuries, paramedic sent"
+Tunnel MVI,,keyword,traffic,other,vehicle collision
+Investigate Out Of Service,INVEOS,sfd_code_exact,unit_dispatch,other,"SFD code INVEOS (Out of Service Investigation), one fire unit sent; event type not given"
+1RED 1 Unit,1RED,sfd_code_exact,unit_dispatch,other,"one fire unit sent with lights and sirens; only says which units are sent, not the event type"
+4RED - 2 + 1 + 1,4RED,sfd_code_exact,unit_dispatch,other,"four fire units sent with lights and sirens; only says which units are sent, not the event type"
+2RED - 1 + 1,,keyword,unit_dispatch,other,"two fire units sent with lights and sirens; only says which units are sent, not the event type"
+Ladder Code Yellow,,keyword,unit_dispatch,other,"ladder truck sent without lights and sirens; only says which units are sent, not the event type"
+Engine Code Red,,keyword,unit_dispatch,other,"fire engine sent with lights and sirens; only says which units are sent, not the event type"
+Ladder Code Red,,keyword,unit_dispatch,other,"ladder truck sent with lights and sirens; only says which units are sent, not the event type"
+Engine Code Yellow,,keyword,unit_dispatch,other,"fire engine sent without lights and sirens; only says which units are sent, not the event type"
+3RED - 1 +1 + 1,3RED,sfd_code_exact,unit_dispatch,other,"three fire units sent with lights and sirens; only says which units are sent, not the event type"
+1YELLOW 1 Unit,,keyword,unit_dispatch,other,"one fire unit sent without lights and sirens; only says which units are sent, not the event type"
+4RED - 2 + 1 + 1 Water,4RED,sfd_code_inferred,unit_dispatch,other,"four fire units sent with lights and sirens; only says which units are sent, not the event type"
