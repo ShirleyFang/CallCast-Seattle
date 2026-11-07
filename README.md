@@ -62,5 +62,5 @@ Lag plots, autocorrelation and partial autocorrelation of calls per shift, on th
 - **Outages:** outage shifts are left out of the lag calculations, and their rows are dropped afterwards.
 - **Missing values:** the lags are empty for the first weeks of 2022 and next to outages. Tree models handle this as is; linear models need those rows dropped.
 - **Left out:** the group counts (`fire`, `medical`, ...), since they add up to the target.
-- **Splits:** none in the file. Use rolling cross-validation split by `ShiftDate`, and keep 2026 as the final test.
+- **Splits:** none in the file. Use rolling cross-validation split by `ShiftDate`
 - **Why a script:** cleaning reads the 289 MB raw file, while this step reads the 2 MB table, so features can be changed and rebuilt in seconds with one command.
