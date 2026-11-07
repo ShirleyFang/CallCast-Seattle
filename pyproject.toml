@@ -11,28 +11,25 @@ dependencies = [
     "pyarrow",
     "scipy",
     "patsy",
-
     # --- Machine learning ---
     "scikit-learn",
     "joblib",
     "mlxtend",
-
     # --- Visualization ---
     "matplotlib",
     "seaborn",
     "plotly",
     "pillow",
-
     # --- Notebooks ---
     "jupyterlab",
     "ipykernel",
     "ipywidgets",
-
     # --- Deployment & serving ---
     "flask",
     "connexion[flask,swagger-ui]",
     "streamlit",
     "requests",
+    "statsmodels>=0.15.0",
 ]
 
 [tool.uv]
