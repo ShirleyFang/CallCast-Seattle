@@ -1,0 +1,114 @@
+/* Hover feedback for everything you can click. Colors match .streamlit/config.toml. */
+
+/* Hand cursor on anything clickable */
+button,
+a,
+summary,
+label:has(input[type="radio"]),
+[role="tab"],
+[role="option"],
+[role="gridcell"],
+[data-testid="stSelectbox"] > div[data-rac],
+[data-testid="stSelectbox"] > div[data-rac] *,
+[data-testid="stDateInputField"],
+[data-testid="stDateInputField"] * {
+  cursor: pointer !important;
+}
+
+/* Buttons: lift a little and darken */
+[data-testid="stBaseButton-primary"],
+[data-testid="stBaseButton-secondary"] {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+[data-testid="stBaseButton-primary"]:hover {
+  background-color: #7F1D20 !important;
+  border-color: #7F1D20 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(31, 42, 54, 0.25);
+}
+[data-testid="stBaseButton-secondary"]:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(31, 42, 54, 0.15);
+}
+[data-testid="stBaseButton-primary"]:active,
+[data-testid="stBaseButton-secondary"]:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* Tabs: tint the background and turn red */
+[role="tab"] {
+  transition: color 0.15s ease, background-color 0.15s ease;
+  border-radius: 0.25rem 0.25rem 0 0;
+}
+[role="tab"]:hover {
+  color: #A4282B !important;
+  background-color: #EFEBE5;
+}
+
+/* Station menu and date box: red border on hover */
+[data-testid="stSelectbox"] > div[data-rac],
+[data-testid="stDateInputField"] {
+  border-radius: 0.25rem;
+  transition: box-shadow 0.15s ease;
+}
+[data-testid="stSelectbox"] > div[data-rac]:hover,
+[data-testid="stDateInputField"]:hover {
+  box-shadow: 0 0 0 2px #E06A6D;
+}
+
+/* Dropdown options */
+[role="option"]:hover {
+  background-color: #F6E3E3 !important;
+}
+
+/* Radio options in the sidebar */
+label:has(input[type="radio"]) {
+  transition: color 0.15s ease;
+}
+label:has(input[type="radio"]):hover {
+  color: #FFFFFF !important;
+}
+label:has(input[type="radio"]):hover p {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Hourly breakdown box */
+[data-testid="stExpander"] summary {
+  transition: background-color 0.15s ease;
+}
+[data-testid="stExpander"] summary:hover {
+  background-color: #EFEBE5;
+  color: #A4282B;
+}
+
+/* Links */
+a {
+  transition: color 0.15s ease;
+}
+a:hover {
+  color: #A4282B !important;
+}
+
+/* Sidebar collapse arrow */
+[data-testid="stSidebarCollapseButton"] button:hover,
+[data-testid="stExpandSidebarButton"]:hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+[data-testid="stSidebarCollapseButton"] button:hover span {
+  color: #FFFFFF !important;
+}
+
+/* Keep it calm for people who turn off motion */
+@media (prefers-reduced-motion: reduce) {
+  [data-testid^="stBaseButton"],
+  [data-testid^="stBaseButton"]:hover,
+  [role="tab"],
+  [data-testid="stSelectbox"] > div[data-rac],
+  [data-testid="stDateInputField"],
+  [data-testid="stExpander"] summary {
+    transition: none !important;
+    transform: none !important;
+  }
+}
