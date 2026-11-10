@@ -75,3 +75,28 @@ Run this before training. It prints the shape, the missing values per column, an
 ### Step 6: Evaluate models (`scripts/evaluate_models.py`)
 
 Rolling cross-validation with four quarterly folds over 2025: each fold trains on all shifts before the quarter and validates on that quarter. The 2026 test set is not used. It compares three baselines (training mean, station mean, station × weekday mean) with two first-pass models (Poisson gradient boosting and random forest, no tuning) on station MAE, station RMSE and citywide MAE (the sum of the 34 station forecasts per shift). The `year` column is left out of the features, because in the first fold 2025 is not in the training data and the scores got worse with it. Results are printed, not saved.
+
+## Streamlit app
+
+```bash
+uv sync --frozen
+uv run streamlit run app.py
+```
+
+The app only needs the CSVs already in `data/`, not the raw 911 export. Pick a shift date and a station to see:
+
+* expected calls for each station and the citywide total
+* a station map and a ranked table you can download as CSV
+* that station's past calls, weekday and monthly averages, and call types
+
+"Historical reference" uses each station's average for the same weekday in earlier shifts. "Trained model" needs `predict.py` and `model_metadata.json` in the project folder, which I'll add once the step 6 model is saved. The hourly breakdown needs `data/hourly_profile.csv`.
+
+The app plans the way a supervisor would: on Thursday at 08:00 for Saturday's shift. So it only uses shifts that had finished by then (Wednesday and earlier).
+
+Tests:
+
+```bash
+uv run python -m unittest discover -s tests -v
+```
+
+[docs/APP_WALKTHROUGH.md](docs/APP_WALKTHROUGH.md) goes through the app screen by screen.
