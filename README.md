@@ -20,8 +20,11 @@ The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is 
 | Step 3 | `scripts/step3_baseline.py` | `station_shift_counts.csv` → baseline scores (proposal Section 3) |
 | Lag analysis | `notebooks/lag_analysis.ipynb` | `station_shift_counts.csv` → choice of recent-call features |
 | Step 4 | `scripts/step4_features.py` | `station_shift_counts.csv` → `data/modeling_dataset.csv` |
+| Step 5 | `scripts/check_modeling_dataset.py` | `data/modeling_dataset.csv` → sanity checks (printed) |
+| Step 6 | `scripts/evaluate_models.py` | `data/modeling_dataset.csv` → rolling-CV scores of baselines and first-pass models (printed) |
 
 Scripts run from the repository root (`uv run python scripts/<name>.py`). Notebooks live in `notebooks/` and read files with `../data/`.
+`scripts/cv_utils.py` holds the folds, features and metrics shared by steps 5 and 6.
 
 ### Cleaning (`notebooks/data_clean.ipynb`)
 
@@ -64,3 +67,11 @@ Lag plots, autocorrelation and partial autocorrelation of calls per shift, on th
 - **Left out:** the group counts (`fire`, `medical`, ...), since they add up to the target.
 - **Splits:** none in the file. Use rolling cross-validation split by `ShiftDate`
 - **Why a script:** cleaning reads the 289 MB raw file, while this step reads the 2 MB table, so features can be changed and rebuilt in seconds with one command.
+
+### Step 5: Check the modeling dataset (`scripts/check_modeling_dataset.py`)
+
+Run this before training. It prints the shape, the missing values per column, and whether a call-group column (which adds up to the target) is still in the file. It reproduces the Step 3 baseline on the modeling dataset (training mean 9.05, test MAE 5.98, citywide test MAE 23.4) and compares each lag column with the calls from that many days earlier. A few mismatches next to outage shifts are expected.
+
+### Step 6: Evaluate models (`scripts/evaluate_models.py`)
+
+Rolling cross-validation with four quarterly folds over 2025: each fold trains on all shifts before the quarter and validates on that quarter. The 2026 test set is not used. It compares three baselines (training mean, station mean, station × weekday mean) with two first-pass models (Poisson gradient boosting and random forest, no tuning) on station MAE, station RMSE and citywide MAE (the sum of the 34 station forecasts per shift). The `year` column is left out of the features, because in the first fold 2025 is not in the training data and the scores got worse with it. Results are printed, not saved.
