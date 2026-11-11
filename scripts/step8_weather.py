@@ -11,10 +11,11 @@
 #     downtown. Averaging the 4 points around the city did not bring ERA5 closer to GFS
 #     (rain gap 0.90 -> 0.82 mm/shift, temperature MAE worse), so one point is kept.
 #   - Previous Runs API, models=gfs_global, variable_previous_dayN = forecast made N×24 h
-#     before the valid hour. Seattle has data from 2024-01-21 (snowfall from 2024-12-08).
+#     before the valid hour. Seattle has data from 2024-01-21; snowfall data starts
+#     2024-12-08 18:00 UTC, so the first complete shift is 2024-12-09.
 # Hourly data is cached in data/weather_hourly_*.csv (in git); delete a file to download it again.
 #
-# Run it from the repository root: uv run python scripts/step5_weather.py
+# Run it from the repository root: uv run python scripts/step8_weather.py
 
 import os
 
@@ -105,7 +106,8 @@ def to_shifts(hourly, prefix):
 
 
 # 3. aggregate to shifts and join on ShiftDate (weather is the same for every station)
-# fc_snow_sum is empty before 2024-12-08 (GFS snowfall not archived); left empty, not filled
+# fc_snow_sum is empty before 2024-12-09: snowfall data starts 2024-12-08 18:00 UTC,
+# so the first complete shift is 2024-12-09. Left empty, not filled.
 shift_weather = to_shifts(era5, 'era5_').join(to_shifts(fc, 'fc_'), how='outer')
 df = df.merge(shift_weather, left_on='ShiftDate', right_index=True, how='left')
 
