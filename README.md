@@ -8,20 +8,31 @@ Forecasts Seattle Fire Department 911 calls per station per 08:00–08:00 shift,
 uv sync
 ```
 
+To retrain the model locally:
+
+```bash
+uv run python scripts/train_model.py
+```
+
+This generates `models/poisson_gbm.joblib` and `model_metadata.json`,
+which are required for the Streamlit app's "Trained model" mode.
+
 The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is not in git. Download [Seattle Real Time Fire 911 Calls](https://data.seattle.gov/Public-Safety/Seattle-Real-Time-Fire-911-Calls/kzjm-xkqj) as CSV into `data/` before running the cleaning notebook. Everything after cleaning starts from `data/station_shift_counts.csv`, which is in git.
 
 ## Pipeline
 
-| Step         | File                                | Input → output                                                                               |
-| ------------ | ----------------------------------- | -------------------------------------------------------------------------------------------- |
-| Cleaning     | `notebooks/data_clean.ipynb`        | raw export → `data/station_shift_counts.csv`                                                 |
-| Step 1       | `scripts/step1_inspect.py`          | `station_shift_counts.csv` → structure checks (printed)                                      |
-| Step 2       | `scripts/step2_sec2.py`             | `station_shift_counts.csv` → target distribution and histogram (proposal Section 2)          |
-| Step 3       | `scripts/step3_baseline.py`         | `station_shift_counts.csv` → baseline scores (proposal Section 3)                            |
-| Lag analysis | `notebooks/lag_analysis.ipynb`      | `station_shift_counts.csv` → choice of recent-call features                                  |
-| Step 4       | `scripts/step4_features.py`         | `station_shift_counts.csv` → `data/modeling_dataset.csv`                                     |
-| Step 5       | `scripts/check_modeling_dataset.py` | `data/modeling_dataset.csv` → sanity checks (printed)                                        |
-| Step 6       | `scripts/evaluate_models.py`        | `data/modeling_dataset.csv` → rolling-CV scores of baselines and first-pass models (printed) |
+| Step         | File                                | Input → output                                                                                            |
+| ------------ | ----------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Cleaning     | `notebooks/data_clean.ipynb`        | raw export → `data/station_shift_counts.csv`                                                              |
+| Step 1       | `scripts/step1_inspect.py`          | `station_shift_counts.csv` → structure checks (printed)                                                   |
+| Step 2       | `scripts/step2_sec2.py`             | `station_shift_counts.csv` → target distribution and histogram (proposal Section 2)                       |
+| Step 3       | `scripts/step3_baseline.py`         | `station_shift_counts.csv` → baseline scores (proposal Section 3)                                         |
+| Lag analysis | `notebooks/lag_analysis.ipynb`      | `station_shift_counts.csv` → choice of recent-call features                                               |
+| Step 4       | `scripts/step4_features.py`         | `station_shift_counts.csv` → `data/modeling_dataset.csv`                                                  |
+| Step 5       | `scripts/check_modeling_dataset.py` | `data/modeling_dataset.csv` → sanity checks (printed)                                                     |
+| Step 6       | `scripts/evaluate_models.py`        | `data/modeling_dataset.csv` → rolling-CV scores of baselines and first-pass models (printed)              |
+| Step 7       | `scripts/train_model.py`            | `data/modeling_dataset.csv` → trained Poisson GBM (`models/poisson_gbm.joblib`) and `model_metadata.json` |
+| Prediction   | `predict.py`                        | saved model + feature rows → predicted calls per station                                                  |
 
 Scripts run from the repository root (`uv run python scripts/<name>.py`). Notebooks live in `notebooks/` and read files with `../data/`.
 `scripts/cv_utils.py` holds the folds, features and metrics shared by steps 5 and 6.
@@ -65,7 +76,7 @@ Lag plots, autocorrelation and partial autocorrelation of calls per shift, on th
 - **Outages:** outage shifts are left out of the lag calculations, and their rows are dropped afterwards.
 - **Missing values:** the lags are empty for the first weeks of 2022 and next to outages. Tree models handle this as is; linear models need those rows dropped.
 - **Left out:** the group counts (`fire`, `medical`, ...), since they add up to the target.
-- **Forecast rows:** the same features are also built for the 3 shifts after the last known one (2026-10-29 to 10-31), with `calls` empty, and saved to `data/forecast_features.csv` for the app. Past shifts are read from `modeling_dataset.csv`.
+- **Forecast rows:** the same features are also built for the 3 shifts after the last known shift, with calls empty, and saved to data/forecast_features.csv for the app. The forecast dates are determined automatically from the latest available shift in the dataset. Past shifts are read from modeling_dataset.csv.
 - **Splits:** none in the file. Use rolling cross-validation split by `ShiftDate`
 - **Why a script:** cleaning reads the 289 MB raw file, while this step reads the 2 MB table, so features can be changed and rebuilt in seconds with one command.
 
@@ -75,7 +86,38 @@ Run this before training. It prints the shape, the missing values per column, an
 
 ### Step 6: Evaluate models (`scripts/evaluate_models.py`)
 
-Rolling cross-validation with four quarterly folds over 2025: each fold trains on all shifts before the quarter and validates on that quarter. The 2026 test set is not used. It compares three baselines (training mean, station mean, station × weekday mean) with two first-pass models (Poisson gradient boosting and random forest, no tuning) on station MAE, station RMSE and citywide MAE (the sum of the 34 station forecasts per shift). The `year` column is left out of the features, because in the first fold 2025 is not in the training data and the scores got worse with it. Results are printed, not saved. Each fold trains on all shifts up to two shifts before the quarter (a gap, because the labels of the last two shifts are not yet known when the first shift of the quarter is forecast) and validates on that quarter.
+Rolling cross-validation with four quarterly folds over 2025: each fold trains on all shifts before the quarter and validates on that quarter. The 2026 test set is not used. It compares three baselines (training mean, station mean, station × weekday mean, lag3) with two first-pass models (Poisson gradient boosting and random forest, no tuning) on station MAE, station RMSE and citywide MAE (the sum of the 34 station forecasts per shift). The `year` column is left out of the features, because in the first fold 2025 is not in the training data and the scores got worse with it. Results are printed, not saved. Each fold trains on all shifts up to two shifts before the quarter (a gap, because the labels of the last two shifts are not yet known when the first shift of the quarter is forecast) and validates on that quarter.
+
+### Step 7: Train and save the model (`scripts/train_model.py`)
+
+Trains a Poisson Gradient Boosting model using shifts from 2022–2025, leaving 2026 out of training for final evaluation. The model uses the same feature configuration as Step 6, excluding `year`.
+
+Run from the repository root:
+
+```bash
+uv run python scripts/train_model.py
+```
+
+This generates:
+
+- `models/poisson_gbm.joblib`: the trained model, feature column order, preprocessing information, and station × weekday averages.
+- `model_metadata.json`: the model name, training cutoff, raw feature columns, and missing-value support required by the Streamlit app.
+
+The model currently uses the first-pass configuration without hyperparameter tuning or weather features. Final model selection and evaluation on the 2026 test set are still pending.
+
+### Prediction interface (`predict.py`)
+
+The prediction interface loads the saved model and applies the same feature encoding used during training.
+
+```python
+from predict import predict_shift
+
+predictions = predict_shift(feature_rows)
+```
+
+`feature_rows` is a DataFrame containing the required model inputs, including station identifiers. The function returns a DataFrame with `Station` and `predicted_calls`.
+
+The interface has been tested with all 34 stations and successfully integrated with the Streamlit app for historical replay. Future forecasts require the app to load the corresponding rows from `data/forecast_features.csv`.
 
 ## Streamlit app
 
@@ -90,7 +132,13 @@ The app only needs the CSVs already in `data/`, not the raw 911 export. Pick a s
 - a station map and a ranked table you can download as CSV
 - that station's past calls, weekday and monthly averages, and call types
 
-"Historical reference" uses each station's average for the same weekday in earlier shifts. "Trained model" needs `predict.py` and `model_metadata.json` in the project folder, which I'll add once the step 6 model is saved. The hourly breakdown needs `data/hourly_profile.csv`.
+"Historical reference" uses each station's average for the same weekday in earlier shifts.
+
+"Trained model" uses the saved Poisson GBM through `predict.py`. The model is loaded from `models/poisson_gbm.joblib`, with its configuration and training cutoff defined in `model_metadata.json`.
+
+The trained model has been integrated and tested with the Streamlit app. The current app supports historical replay for eligible dates after the model's training cutoff. Future forecasting and weather inputs are not yet integrated.
+
+The hourly breakdown requires `data/hourly_profile.csv`.
 
 The app plans the way a supervisor would: on Thursday at 08:00 for Saturday's shift. So it only uses shifts that had finished by then (Wednesday and earlier).
 
