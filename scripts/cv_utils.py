@@ -11,6 +11,12 @@ TARGET = "calls"
 STATION_COL = "Station"
 DATE_COL = "ShiftDate"
 
+# Forecasts are made MIN_LAG shifts ahead (same value as MIN_LAG in step4_features.py).
+# At the forecast origin the labels of the last MIN_LAG - 1 shifts before a validation
+# period are not known yet, so training stops that many shifts earlier (a gap).
+MIN_LAG = 3
+GAP_SHIFTS = MIN_LAG - 1
+
 # Never use these as features: they are parts of the target or outage flags.
 NON_FEATURES = [TARGET, "fire", "medical", "non_emergency", "other", "OutageHours", "Masked"]
 
@@ -48,10 +54,15 @@ def build_features(df, extra_exclude=()):
     return X, numeric
 
 
-def iter_folds(df, folds=FOLDS):
-    """Yield (fold_start, train_rows, validation_rows) for each rolling-CV fold."""
+def iter_folds(df, folds=FOLDS, gap=GAP_SHIFTS):
+    """Yield (fold_start, train_rows, validation_rows) for each rolling-CV fold.
+
+    Training uses shifts before fold_start minus `gap` shifts, so every training
+    label would already be known when the first validation shift is forecast.
+    """
     for start, end in folds:
-        yield start, df[df[DATE_COL] < start], df[(df[DATE_COL] >= start) & (df[DATE_COL] < end)]
+        train_end = pd.Timestamp(start) - pd.Timedelta(days=gap)
+        yield start, df[df[DATE_COL] < train_end], df[(df[DATE_COL] >= start) & (df[DATE_COL] < end)]
 
 
 def metrics(val, pred):

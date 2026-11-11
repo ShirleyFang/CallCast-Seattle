@@ -12,16 +12,16 @@ The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is 
 
 ## Pipeline
 
-| Step | File | Input → output |
-|---|---|---|
-| Cleaning | `notebooks/data_clean.ipynb` | raw export → `data/station_shift_counts.csv` |
-| Step 1 | `scripts/step1_inspect.py` | `station_shift_counts.csv` → structure checks (printed) |
-| Step 2 | `scripts/step2_sec2.py` | `station_shift_counts.csv` → target distribution and histogram (proposal Section 2) |
-| Step 3 | `scripts/step3_baseline.py` | `station_shift_counts.csv` → baseline scores (proposal Section 3) |
-| Lag analysis | `notebooks/lag_analysis.ipynb` | `station_shift_counts.csv` → choice of recent-call features |
-| Step 4 | `scripts/step4_features.py` | `station_shift_counts.csv` → `data/modeling_dataset.csv` |
-| Step 5 | `scripts/check_modeling_dataset.py` | `data/modeling_dataset.csv` → sanity checks (printed) |
-| Step 6 | `scripts/evaluate_models.py` | `data/modeling_dataset.csv` → rolling-CV scores of baselines and first-pass models (printed) |
+| Step         | File                                | Input → output                                                                               |
+| ------------ | ----------------------------------- | -------------------------------------------------------------------------------------------- |
+| Cleaning     | `notebooks/data_clean.ipynb`        | raw export → `data/station_shift_counts.csv`                                                 |
+| Step 1       | `scripts/step1_inspect.py`          | `station_shift_counts.csv` → structure checks (printed)                                      |
+| Step 2       | `scripts/step2_sec2.py`             | `station_shift_counts.csv` → target distribution and histogram (proposal Section 2)          |
+| Step 3       | `scripts/step3_baseline.py`         | `station_shift_counts.csv` → baseline scores (proposal Section 3)                            |
+| Lag analysis | `notebooks/lag_analysis.ipynb`      | `station_shift_counts.csv` → choice of recent-call features                                  |
+| Step 4       | `scripts/step4_features.py`         | `station_shift_counts.csv` → `data/modeling_dataset.csv`                                     |
+| Step 5       | `scripts/check_modeling_dataset.py` | `data/modeling_dataset.csv` → sanity checks (printed)                                        |
+| Step 6       | `scripts/evaluate_models.py`        | `data/modeling_dataset.csv` → rolling-CV scores of baselines and first-pass models (printed) |
 
 Scripts run from the repository root (`uv run python scripts/<name>.py`). Notebooks live in `notebooks/` and read files with `../data/`.
 `scripts/cv_utils.py` holds the folds, features and metrics shared by steps 5 and 6.
@@ -47,10 +47,10 @@ Drops outage shifts, then reports the target distribution (median, share of zero
 
 Splits by year (train 2022–2024, validation 2025, test 2026, outage shifts dropped) and always predicts the training mean, with no inputs. Every model has to beat these test scores:
 
-| Level | Training mean | Test MAE | Test RMSE |
-|---|---|---|---|
-| Per station-shift | 9.05 | 5.98 | 9.11 |
-| Citywide per shift | 307.8 | 23.4 | 29.7 |
+| Level              | Training mean | Test MAE | Test RMSE |
+| ------------------ | ------------- | -------- | --------- |
+| Per station-shift  | 9.05          | 5.98     | 9.11      |
+| Citywide per shift | 307.8         | 23.4     | 29.7      |
 
 These numbers are after removing the two stopped codes. The proposal reported the earlier version (training mean 10.07, test MAE 6.35, citywide test MAE 37.6).
 
@@ -74,7 +74,7 @@ Run this before training. It prints the shape, the missing values per column, an
 
 ### Step 6: Evaluate models (`scripts/evaluate_models.py`)
 
-Rolling cross-validation with four quarterly folds over 2025: each fold trains on all shifts before the quarter and validates on that quarter. The 2026 test set is not used. It compares three baselines (training mean, station mean, station × weekday mean) with two first-pass models (Poisson gradient boosting and random forest, no tuning) on station MAE, station RMSE and citywide MAE (the sum of the 34 station forecasts per shift). The `year` column is left out of the features, because in the first fold 2025 is not in the training data and the scores got worse with it. Results are printed, not saved.
+Rolling cross-validation with four quarterly folds over 2025: each fold trains on all shifts before the quarter and validates on that quarter. The 2026 test set is not used. It compares three baselines (training mean, station mean, station × weekday mean) with two first-pass models (Poisson gradient boosting and random forest, no tuning) on station MAE, station RMSE and citywide MAE (the sum of the 34 station forecasts per shift). The `year` column is left out of the features, because in the first fold 2025 is not in the training data and the scores got worse with it. Results are printed, not saved. Each fold trains on all shifts up to two shifts before the quarter (a gap, because the labels of the last two shifts are not yet known when the first shift of the quarter is forecast) and validates on that quarter.
 
 ## Streamlit app
 
@@ -85,9 +85,9 @@ uv run streamlit run app.py
 
 The app only needs the CSVs already in `data/`, not the raw 911 export. Pick a shift date and a station to see:
 
-* expected calls for each station and the citywide total
-* a station map and a ranked table you can download as CSV
-* that station's past calls, weekday and monthly averages, and call types
+- expected calls for each station and the citywide total
+- a station map and a ranked table you can download as CSV
+- that station's past calls, weekday and monthly averages, and call types
 
 "Historical reference" uses each station's average for the same weekday in earlier shifts. "Trained model" needs `predict.py` and `model_metadata.json` in the project folder, which I'll add once the step 6 model is saved. The hourly breakdown needs `data/hourly_profile.csv`.
 
