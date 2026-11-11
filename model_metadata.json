@@ -1,0 +1,17 @@
+{
+  "model_name": "Poisson GBM (first pass)",
+  "trained_through": "2025-12-31",
+  "feature_columns": [
+    "Station",
+    "weekday",
+    "month",
+    "is_holiday",
+    "is_holiday_eve",
+    "lag3",
+    "lag7",
+    "avg7",
+    "avg28",
+    "same_weekday_avg4"
+  ],
+  "accepts_missing": true
+}
