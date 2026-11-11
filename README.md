@@ -20,6 +20,7 @@ The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is 
 | Step 3 | `scripts/step3_baseline.py` | `station_shift_counts.csv` → baseline scores (proposal Section 3) |
 | Lag analysis | `notebooks/lag_analysis.ipynb` | `station_shift_counts.csv` → choice of recent-call features |
 | Step 4 | `scripts/step4_features.py` | `station_shift_counts.csv` → `data/modeling_dataset.csv` |
+| Step 5 | `scripts/step5_weather.py` | `modeling_dataset.csv` + Open-Meteo → `data/modeling_dataset_weather.csv` |
 
 Scripts run from the repository root (`uv run python scripts/<name>.py`). Notebooks live in `notebooks/` and read files with `../data/`.
 
@@ -64,3 +65,11 @@ Lag plots, autocorrelation and partial autocorrelation of calls per shift, on th
 - **Left out:** the group counts (`fire`, `medical`, ...), since they add up to the target.
 - **Splits:** none in the file. Use rolling cross-validation split by `ShiftDate`
 - **Why a script:** cleaning reads the 289 MB raw file, while this step reads the 2 MB table, so features can be changed and rebuilt in seconds with one command.
+
+### Step 5: Weather features (`scripts/step5_weather.py`)
+
+- **Source:** [Open-Meteo](https://open-meteo.com), licensed CC BY 4.0, at one point for the whole city (the mean of the station locations). The hourly data is cached in `data/weather_hourly_era5.csv` and `data/weather_hourly_gfs_global_day3.csv`. Both files are in git, so the script runs without downloading; delete a file to download it again.
+- **Two versions:** `era5_*` is the weather that actually happened, from the ERA5 reanalysis (a 0.25° grid model, not weather-station observations). It is the upper bound of a perfect forecast. The nearest ERA5 grid point (47.50, −122.25) is southeast of downtown. Averaging the 4 grid points around the city did not bring ERA5 closer to the forecast (mean rain gap 0.90 → 0.82 mm per shift, temperature error larger), so the single point is kept. ERA5 is still about 0.9 mm per shift wetter than GFS on average. `fc_*` is the GFS forecast (`gfs_global`) available when the prediction is made: `previous_day3` from the Previous Runs API, made at least 72 hours before each hour of the target shift. It follows `MIN_LAG`.
+- **Coverage:** the forecasts start on 2024-01-21 (`fc_snow_sum` on 2024-12-09), so `fc_*` is empty before that. 2025 and 2026 are complete.
+- **Shifts:** hours are converted to Seattle time and grouped with the cleaning rule (local time minus 8 hours), so daylight-saving days have 23 or 25 hours. Precipitation, snowfall and gusts cover the hour before their timestamp, so they are shifted to the hour where they start. A shift with any missing hour is left empty.
+- **Features per shift:** `precip_sum` (mm), `precip_max_hr` (mm in one hour), `snow_sum` (cm), `temp_max` and `temp_min` (°C), `gust_max` (km/h).
