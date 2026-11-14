@@ -33,6 +33,8 @@ The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is 
 | Step 6       | `scripts/evaluate_models.py`        | `data/modeling_dataset.csv` → rolling-CV scores of baselines and first-pass models (printed)              |
 | Step 7       | `scripts/train_model.py`            | `data/modeling_dataset.csv` → trained Poisson GBM (`models/poisson_gbm.joblib`) and `model_metadata.json` |
 | Prediction   | `predict.py`                        | saved model + feature rows → predicted calls per station                                                  |
+| Step 8       | `scripts/step8_weather.py`          | `data/modeling_dataset.csv` + Open-Meteo → `data/modeling_dataset_weather.csv`                            |
+| Step 9       | `scripts/step9_weather_compare.py`  | `data/modeling_dataset_weather.csv` → rolling-CV scores with and without weather (printed)                |
 
 Scripts run from the repository root (`uv run python scripts/<name>.py`). Notebooks live in `notebooks/` and read files with `../data/`.
 `scripts/cv_utils.py` holds the folds, features and metrics shared by steps 5 and 6.
@@ -118,6 +120,37 @@ predictions = predict_shift(feature_rows)
 `feature_rows` is a DataFrame containing the required model inputs, including station identifiers. The function returns a DataFrame with `Station` and `predicted_calls`.
 
 The interface has been tested with all 34 stations and successfully integrated with the Streamlit app for historical replay. Future forecasts require the app to load the corresponding rows from `data/forecast_features.csv`.
+
+### Step 8: Weather features (`scripts/step8_weather.py`)
+
+- **Source:** [Open-Meteo](https://open-meteo.com), licensed CC BY 4.0, at one point for the whole city (the mean of the station locations). The hourly data is cached in `data/weather_hourly_era5.csv` and `data/weather_hourly_gfs_global_day3.csv`. Both files are in git, so the script runs without downloading; delete a file to download it again.
+- **Two versions:** `era5_*` is the weather that actually happened, from the ERA5 reanalysis (a 0.25° grid model, not weather-station observations). It is the upper bound of a perfect forecast. The nearest ERA5 grid point (47.50, −122.25) is southeast of downtown. Averaging the 4 grid points around the city did not bring ERA5 closer to the forecast (mean rain gap 0.90 → 0.82 mm per shift, temperature error larger), so the single point is kept. ERA5 is still about 0.9 mm per shift wetter than GFS on average. `fc_*` is the GFS forecast (`gfs_global`) available when the prediction is made: `previous_day3` from the Previous Runs API, made at least 72 hours before each hour of the target shift. It follows `MIN_LAG`.
+- **Coverage:** the forecasts start on 2024-01-21, so `fc_*` is empty before that. For `fc_snow_sum`, snowfall data starts 2024-12-08 18:00 UTC, so the first complete shift is 2024-12-09. 2025 and 2026 are complete.
+- **Shifts:** hours are converted to Seattle time and grouped with the cleaning rule (local time minus 8 hours), so daylight-saving days have 23 or 25 hours. Precipitation, snowfall and gusts cover the hour before their timestamp, so they are shifted to the hour where they start. A shift with any missing hour is left empty.
+- **Features per shift:** `precip_sum` (mm), `precip_max_hr` (mm in one hour), `snow_sum` (cm), `temp_max` and `temp_min` (°C), `gust_max` (km/h).
+
+### Step 9: Weather comparison (`scripts/step9_weather_compare.py`)
+
+Runs the same model as Step 6 (Poisson GBM, no tuning, `year` left out) with the folds, training gap and metrics from `cv_utils.py`, with and without the Step 8 weather. 2026 is dropped after loading. Version A reproduces the Poisson GBM scores of Step 6 exactly. A check confirms each version uses only the weather columns it should.
+
+| Version | Training weather                      | Validation weather      | Station MAE | Station RMSE | Citywide MAE (vs A) |
+| ------- | ------------------------------------- | ----------------------- | ----------- | ------------ | ------------------- |
+| A       | none                                  | none                    | 2.409       | 3.314        | 18.95               |
+| B       | ERA5                                  | ERA5                    | 2.414       | 3.318        | 18.58 (−0.37)       |
+| B3      | ERA5, 3 features                      | ERA5, 3 features        | 2.406       | 3.309        | 18.38 (−0.57)       |
+| C       | ERA5                                  | forecast                | 2.444       | 3.364        | 20.87 (+1.93)       |
+| C-cal   | ERA5                                  | forecast mapped to ERA5 | 2.415       | 3.316        | 19.16 (+0.22)       |
+| C′      | forecast, from 2024-01-21             | forecast                | 2.427       | 3.359        | 19.65 (+0.71)       |
+| C′3     | forecast, from 2024-01-21, 3 features | forecast, 3 features    | 2.418       | 3.335        | 19.12 (+0.18)       |
+| A′      | none, from 2024-01-21                 | none                    | 2.417       | 3.326        | 19.18 (+0.23)       |
+
+Means over the 4 folds of 2025. The 3 features are `precip_sum`, `snow_sum` and `temp_min`. C-cal maps the forecast to the ERA5 scale with quantile mapping, fitted in each fold only on training shifts that have both (2024-01-21 to the training cutoff). An assert checks that no validation shift is used. Fold 1 has only 21 such shifts with snowfall, so its snowfall is left uncalibrated.
+
+- **Main result:** weather that is known when the forecast is made does not improve the model. Every forecast version (C, C-cal, C′, C′3) has a citywide MAE at or above A. At the station level all versions are within 0.04 calls, since the weather is one value for the whole city. Even perfect weather (B, B3) lowers citywide MAE by only 0.4–0.6, and only in 2 of the 4 folds. The differences between folds are larger (17.6–20.8).
+- **Forecast vs. actual weather:** training on ERA5 and validating on the forecast (C) is the worst version, because GFS is drier and less windy than ERA5. Calibration removes most of the bias (gusts −4.1 → +0.3 km/h, minimum temperature −1.0 → +0.2 °C on 2025 shifts) and most of the loss (+1.93 → +0.22), but it still does not beat A.
+- **C′ vs A′:** with the same training rows (2024-01-21 onward, only 339 shifts in fold 1), the forecast adds +0.47 citywide MAE with all 6 features and −0.06 with 3. So the forecast does not help, and the extra features add noise.
+- **Extreme weather** (2025, ERA5 top 10% by rain or gusts, or any snow): perfect weather helps a little (citywide MAE −1.0 on heavy rain, −2.0 on strong wind, −1.2 on snow). On heavy rain and strong wind every forecast version is worse than A. On snow only C′ is lower (20.6), and C doubles the error (21.9 → 43.9; 22.6 after calibration). These subsets have only 11–37 shifts. A and A′, which differ only in training rows, already differ by up to 0.9 on them, so these numbers are noisy.
+- **Limits:** one untuned model and one point of weather for the whole city. GFS forecasts exist only from 2024-01-21 (snowfall from 2024-12-09), which leaves C′ and the calibration little training data. The results cover 2025 only, and 2026 is still unused.
 
 ## Streamlit app
 
