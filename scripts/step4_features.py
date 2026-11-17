@@ -49,7 +49,19 @@ holidays = pd.DatetimeIndex(sorted(set().union(*[r.dates(first, last) for r in r
  
 df['is_holiday'] = df['ShiftDate'].isin(holidays).astype(int)
 df['is_holiday_eve'] = (df['ShiftDate'] + pd.Timedelta(days=1)).isin(holidays).astype(int)
- 
+
+# 3b. special days that is_holiday / is_holiday_eve miss (found in the error analysis;
+# tested in scripts/evaluate_calendar_features.py: 2025 CV citywide MAE 18.95 -> 18.73)
+#   is_nye                     Dec 31: higher every year; is_holiday_eve mixes it with quieter eves
+#   is_day_after_thanksgiving  Black Friday: lower every year; not a federal holiday, so not flagged
+#   is_xmas                    Dec 24-26: is_holiday flags only Dec 25
+day = df['ShiftDate']
+thanksgiving = day.dt.month.eq(11) & day.dt.dayofweek.eq(3) & day.dt.day.between(22, 28)   # 4th Thursday
+df['is_nye'] = (day.dt.month.eq(12) & day.dt.day.eq(31)).astype(int)
+df['is_day_after_thanksgiving'] = day.isin(set(day[thanksgiving] + pd.Timedelta(days=1))).astype(int)
+df['is_xmas'] = (day.dt.month.eq(12) & day.dt.day.between(24, 26)).astype(int)
+special = ['is_nye', 'is_day_after_thanksgiving', 'is_xmas']
+
 known = df['calls'].where(~df['Masked'])          # outage shifts count as unknown
 by_station = known.groupby(df['Station'])
  
@@ -73,7 +85,7 @@ recent = [f'lag{MIN_LAG}', f'lag{weekly[0]}', 'avg7', f'avg{LONG_WINDOW}', f'sam
 df = df[~df['Masked']].copy()
  
 columns = ['Station', 'ShiftDate',
-           'weekday', 'month', 'year', 'is_holiday', 'is_holiday_eve',
+           'weekday', 'month', 'year', 'is_holiday', 'is_holiday_eve', *special,
            *recent, 'calls']
  
 # 6. save: known shifts for training, forecast shifts (calls empty) for the app

@@ -17,6 +17,8 @@ uv run python scripts/train_model.py
 This generates `models/poisson_gbm.joblib` and `model_metadata.json`,
 which are required for the Streamlit app's "Trained model" mode.
 
+`scripts/fetch_concerts.py` needs a free [setlist.fm API key](https://www.setlist.fm/settings/api). Copy `.env.example` to `.env` and paste the key there. `.env` is in `.gitignore`, so the key is never committed.
+
 The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is not in git. Download [Seattle Real Time Fire 911 Calls](https://data.seattle.gov/Public-Safety/Seattle-Real-Time-Fire-911-Calls/kzjm-xkqj) as CSV into `data/` before running the cleaning notebook. Everything after cleaning starts from `data/station_shift_counts.csv`, which is in git.
 
 ## Pipeline
@@ -35,6 +37,11 @@ The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is 
 | Prediction   | `predict.py`                        | saved model + feature rows → predicted calls per station                                                  |
 | Step 8       | `scripts/step8_weather.py`          | `data/modeling_dataset.csv` + Open-Meteo → `data/modeling_dataset_weather.csv`                            |
 | Step 9       | `scripts/step9_weather_compare.py`  | `data/modeling_dataset_weather.csv` → rolling-CV scores with and without weather (printed)                |
+| Step 10      | `scripts/evaluate_by_station.py`    | `data/modeling_dataset.csv` → per-station model comparison and `data/station_errors.csv`                  |
+| Step 11      | `scripts/evaluate_lag_features.py`  | `data/modeling_dataset.csv` + `station_shift_counts.csv` → rolling-CV scores with extra lag features (printed) |
+| Step 12      | `scripts/evaluate_calendar_features.py` | `data/modeling_dataset.csv` → rolling-CV scores with extra calendar features (printed)                |
+| Step 13      | `scripts/fetch_events.py`, `scripts/fetch_concerts.py` | public schedules → `data/events.csv` (home games), `data/concerts.csv` (concerts)      |
+| Step 14      | `scripts/evaluate_events.py`        | `data/modeling_dataset.csv` + event schedules → event effects and rolling-CV scores (printed)             |
 
 Scripts run from the repository root (`uv run python scripts/<name>.py`). Notebooks live in `notebooks/` and read files with `../data/`.
 `scripts/cv_utils.py` holds the folds, features and metrics shared by steps 5 and 6.
@@ -74,7 +81,7 @@ Lag plots, autocorrelation and partial autocorrelation of calls per shift, on th
 ### Step 4: Modeling dataset (`scripts/step4_features.py`)
 
 - **Lead time:** forecasts are made 3 shifts ahead, for example Thursday morning for Saturday. One day is too short to arrange extra staff. Change `MIN_LAG` at the top of the script for a longer lead time.
-- **Features:** calendar (`weekday`, `month`, `year`), US federal holidays (`is_holiday`, `is_holiday_eve`), and recent calls per station using only shifts at least 3 earlier (`lag3`, `lag7`, `avg7`, `avg28`, `same_weekday_avg4`).
+- **Features:** calendar (`weekday`, `month`, `year`), US federal holidays (`is_holiday`, `is_holiday_eve`), special days (`is_nye`, `is_day_after_thanksgiving`, `is_xmas` for Dec 24–26; see Step 12), and recent calls per station using only shifts at least 3 earlier (`lag3`, `lag7`, `avg7`, `avg28`, `same_weekday_avg4`).
 - **Outages:** outage shifts are left out of the lag calculations, and their rows are dropped afterwards.
 - **Missing values:** the lags are empty for the first weeks of 2022 and next to outages. Tree models handle this as is; linear models need those rows dropped.
 - **Left out:** the group counts (`fire`, `medical`, ...), since they add up to the target.
@@ -144,13 +151,70 @@ Runs the same model as Step 6 (Poisson GBM, no tuning, `year` left out) with the
 | C′3     | forecast, from 2024-01-21, 3 features | forecast, 3 features    | 2.418       | 3.335        | 19.12 (+0.18)       |
 | A′      | none, from 2024-01-21                 | none                    | 2.417       | 3.326        | 19.18 (+0.23)       |
 
-Means over the 4 folds of 2025. The 3 features are `precip_sum`, `snow_sum` and `temp_min`. C-cal maps the forecast to the ERA5 scale with quantile mapping, fitted in each fold only on training shifts that have both (2024-01-21 to the training cutoff). An assert checks that no validation shift is used. Fold 1 has only 21 such shifts with snowfall, so its snowfall is left uncalibrated.
+Means over the 4 folds of 2025, run before the special days were added in Step 4 (with them, A is 18.73). The 3 features are `precip_sum`, `snow_sum` and `temp_min`. C-cal maps the forecast to the ERA5 scale with quantile mapping, fitted in each fold only on training shifts that have both (2024-01-21 to the training cutoff). An assert checks that no validation shift is used. Fold 1 has only 21 such shifts with snowfall, so its snowfall is left uncalibrated.
 
 - **Main result:** weather that is known when the forecast is made does not improve the model. Every forecast version (C, C-cal, C′, C′3) has a citywide MAE at or above A. At the station level all versions are within 0.04 calls, since the weather is one value for the whole city. Even perfect weather (B, B3) lowers citywide MAE by only 0.4–0.6, and only in 2 of the 4 folds. The differences between folds are larger (17.6–20.8).
 - **Forecast vs. actual weather:** training on ERA5 and validating on the forecast (C) is the worst version, because GFS is drier and less windy than ERA5. Calibration removes most of the bias (gusts −4.1 → +0.3 km/h, minimum temperature −1.0 → +0.2 °C on 2025 shifts) and most of the loss (+1.93 → +0.22), but it still does not beat A.
 - **C′ vs A′:** with the same training rows (2024-01-21 onward, only 339 shifts in fold 1), the forecast adds +0.47 citywide MAE with all 6 features and −0.06 with 3. So the forecast does not help, and the extra features add noise.
 - **Extreme weather** (2025, ERA5 top 10% by rain or gusts, or any snow): perfect weather helps a little (citywide MAE −1.0 on heavy rain, −2.0 on strong wind, −1.2 on snow). On heavy rain and strong wind every forecast version is worse than A. On snow only C′ is lower (20.6), and C doubles the error (21.9 → 43.9; 22.6 after calibration). These subsets have only 11–37 shifts. A and A′, which differ only in training rows, already differ by up to 0.9 on them, so these numbers are noisy.
 - **Limits:** one untuned model and one point of weather for the whole city. GFS forecasts exist only from 2024-01-21 (snowfall from 2024-12-09), which leaves C′ and the calibration little training data. The results cover 2025 only, and 2026 is still unused.
+
+Steps 10–14 use the same folds, training gap and untuned Poisson GBM as Step 6, and never use 2026. Each script ends with its results in a comment. Steps 10 and 11 were run before the special days were added (current GBM citywide MAE 18.95).
+
+### Step 10: Per-station models (`scripts/evaluate_by_station.py`)
+
+Does a different model work better at different stations? Compares baselines, the global GBM and random forest (one model for all stations), and a per-station GBM and Poisson GLM (one model per station, trained on its ~1,000 rows).
+
+| Model                  | Station MAE | Citywide MAE |
+| ---------------------- | ----------- | ------------ |
+| Global GBM             | 2.409       | 18.95        |
+| Per-station GLM        | 2.431       | 19.98        |
+| Station × weekday mean | 2.448       | 20.71        |
+| Global random forest   | 2.457       | 20.03        |
+| Per-station GBM        | 2.718       | 21.40        |
+
+- The best model beats the global GBM by more than 2% at only 3 of 34 stations. Picking a model per station on folds 1–3 did not hold up on fold 4, so the global GBM is kept everywhere.
+- The stations farthest from the Poisson noise floor (the error left even by a perfect forecast of the mean) are SFD 10 (+17%), SFD 9 (+16%) and SFD 17 (+13%).
+- `data/station_errors.csv` saves one row per station (MAE per model, noise floor, best model, address, lat/lon) for the app.
+
+### Step 11: Extra lag features (`scripts/evaluate_lag_features.py`)
+
+Adds history features built from the call data, each using only shifts at least 3 earlier: citywide level (`citywide_ratio`, `citywide_lag3_ratio`), the 3 nearest stations (`neighbor_lag3`), trend (`avg7 / avg28`), volatility (`std28`), calls by type 3 shifts earlier, and the same weekday one year earlier (`lag364`).
+
+**Result:** none helps. Station MAE changes by less than 0.3%, and citywide MAE is 1–3% worse with every group. The existing lags already hold this information.
+
+### Step 12: Calendar features (`scripts/evaluate_calendar_features.py`)
+
+| Version                                   | Station MAE | Citywide MAE | Folds better |
+| ----------------------------------------- | ----------- | ------------ | ------------ |
+| Current GBM                               | 2.409       | 18.95        | –            |
+| + special days                            | 2.406       | 18.73        | 3 of 4       |
+| + special days + month start (days 1–3)   | 2.407       | 18.83        | 1 of 4       |
+| + special days + UW quarter in session    | 2.410       | 18.94        | 1 of 4       |
+| + special days + long weekend             | 2.411       | 19.11        | 1 of 4       |
+| + special days + day length               | 2.410       | 19.03        | 1 of 4       |
+| + special days + Seattle Public Schools break | 2.404   | 18.78        | 2 of 4       |
+
+"Folds better" counts the folds where citywide MAE is lower than the row it builds on (special days vs the current GBM, the others vs special days).
+
+- **Special days** are added to Step 4. New Year's Eve is higher every year, and the day after Thanksgiving is lower every year; the existing holiday flags miss both. Most of the gain is in the Oct–Dec fold (20.82 → 19.83).
+- **Nothing else** adds anything on top. Month and weekday already cover day length and long weekends. The UW calendar does not help even at SFD 17 and SFD 22 next to campus. On school-break weekdays, citywide calls are about the same as on school days (293.6 vs 296.8 per shift, Feb and Apr 2022–2024).
+- UW quarter dates come from the UW academic calendars. SPS breaks follow fixed rules in the district calendars: mid-winter break is the week of Presidents Day, spring break the week starting the 2nd Monday of April.
+
+### Step 13: Event schedules (`scripts/fetch_events.py`, `scripts/fetch_concerts.py`)
+
+- **Home games**, 2022–2026 (`data/events.csv`): Seahawks, Husky football, Mariners, Sounders, Kraken and Storm, from the MLB, NHL and ESPN public APIs. Only games at Lumen Field, T-Mobile Park, Climate Pledge Arena and Husky Stadium are kept. The shift is the 08:00–08:00 shift the game starts in.
+- **Concerts**, 2022–2026 (`data/concerts.csv`): from setlist.fm (needs the API key, see Setup), at the same venues. One row per venue and night. Nights with a home game at the same venue are dropped (anthem and halftime shows). `size` is `stadium` (Lumen Field, T-Mobile Park) or `arena` (Climate Pledge Arena).
+- Schedules are published weeks to months ahead, so they are known when a forecast is made. setlist.fm lists only shows that took place; for large venues, cancellations are rare.
+
+### Step 14: Event effects (`scripts/evaluate_events.py`)
+
+- **City-wide event flags** (one column per event kind, the same at every station) make citywide MAE worse in all 4 folds (18.73 → 18.92). Events change calls only next to the venue.
+- **Per station:** on 2022–2024 only, three event-station pairs show a clear effect (at least 10 events, +10% or more, t ≥ 2): Husky football at SFD 22 (+4.4 calls, +111%), Seahawks at SFD 10 (+3.8, +11%) and stadium concerts at Lumen Field at SFD 10 (+4.1, +11%). Mariners, Sounders, Kraken, Storm and arena concerts add 0–4%.
+- **Post-model adjustment:** adding each pair's average extra calls (learned from the training shifts) to the GBM forecast cuts the error on those 19 shifts in 2025 from 7.13 to 6.17 (−13%), and the bias from −4.8 to −0.8 calls. Overall MAE is unchanged (18.75). Using the pairs as a GBM feature instead helps less (6.75).
+- City permits for festivals and parades (Seattle Open Data `dm95-f8w5`) were also checked. There is no concert data, 2025 is almost empty, and large permitted events show no citywide error in 2023–2024. They are not used.
+
+[docs/POST_MODEL_ADJUSTMENT.md](docs/POST_MODEL_ADJUSTMENT.md) describes the adjustment in full: how the pairs were chosen, how the extra calls are computed, where the extra calls happen (within 0.5 km of the venue), how it could fit into `train_model.py` and `predict.py`, and its limits. It is a proposal: the model and the app do not use it yet.
 
 ## Streamlit app
 
