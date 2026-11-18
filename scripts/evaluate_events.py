@@ -18,97 +18,42 @@
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
-from cv_utils import load_dataset, build_features, iter_folds, STATION_COL, DATE_COL, TARGET
+from cv_utils import load_dataset, build_features, iter_folds, metrics, STATION_COL, DATE_COL, TARGET
+from feature_sets import (baseline_columns, SPECIAL_DAYS, add_special_days, load_events, event_days,
+                          calls_by_station, event_effect, choose_event_pairs, add_event_candidates)
 
-# TODO
-# [x] 1. Load data/modeling_dataset.csv, data/events.csv (home games, made by
-#        scripts/fetch_events.py) and data/concerts.csv (made by scripts/fetch_concerts.py)
+# [x] 1. Load data/modeling_dataset.csv and the events (feature_sets.load_events: data/events.csv,
+#        home games made by scripts/fetch_events.py, and data/concerts.csv, made by
+#        scripts/fetch_concerts.py)
 
 df = load_dataset()
-games = pd.read_csv("data/events.csv", parse_dates=["ShiftDate"])
-concerts = pd.read_csv("data/concerts.csv", parse_dates=["ShiftDate"])
-stations = pd.read_csv("data/sfd_stations.csv").set_index("station")
-
-# one table of events: kind (team, or stadium / arena concert), venue and shift
-concerts["team"] = concerts["size"] + " concert"
-events = pd.concat([games[["team", "venue", "ShiftDate"]], concerts[["team", "venue", "ShiftDate"]]])
-events = events.rename(columns={"team": "kind"}).drop_duplicates()
+events = load_events()
 print(events.groupby(["kind", events["ShiftDate"].dt.year]).size().unstack(fill_value=0).to_string())
 
 # [x] 2. Special-day features (calendar only, known in advance; see evaluate_calendar_features.py):
-#        is_nye, is_day_after_thanksgiving, is_xmas (Dec 24-26)
+#        is_nye, is_day_after_thanksgiving, is_xmas (Dec 24-26), added in memory
+#        (feature_sets.add_special_days); not part of the baseline. The event versions
+#        build on them, as they are proposed for the final model.
 
+df, _ = add_special_days(df)
 day = df[DATE_COL]
-thanksgiving = day.dt.month.eq(11) & day.dt.dayofweek.eq(3) & day.dt.day.between(22, 28)
-df["is_nye"] = (day.dt.month.eq(12) & day.dt.day.eq(31)).astype(int)
-df["is_day_after_thanksgiving"] = day.isin(set(day[thanksgiving] + pd.Timedelta(days=1))).astype(int)
-df["is_xmas"] = (day.dt.month.eq(12) & day.dt.day.between(24, 26)).astype(int)
-SPECIAL = ["is_nye", "is_day_after_thanksgiving", "is_xmas"]
+SPECIAL = SPECIAL_DAYS
 
-# [x] 3. Part 1 features: one city-wide flag per event kind (the same value at every station)
+# [x] 3. Part 2 analysis: event effect at the 2 stations nearest each venue, on 2022-2024 only
+#        (feature_sets.choose_event_pairs). effect = calls on event shifts minus the mean of the
+#        same weekday +-4 weeks without that kind of event. A pair is kept if the effect is
+#        clear: at least 10 events, +10% or more, t >= 2.
 
-KINDS = sorted(events["kind"].unique())
-CITY_FLAGS = []
-for kind in KINDS:
-    column = "city_" + kind.lower().replace(" ", "_")
-    df[column] = day.isin(set(events.loc[events["kind"] == kind, "ShiftDate"])).astype(int)
-    CITY_FLAGS.append(column)
+effects, PAIRS = choose_event_pairs(df, events)
+chosen = effects.set_index(["kind", "venue", "station"]).loc[PAIRS].reset_index()
+calls = calls_by_station(df)
 
-# [x] 4. Part 2: event effect at the 2 stations nearest each venue, on 2022-2024 only
-#        effect = calls on event shifts minus the mean of the same weekday +-4 weeks
-#        without that kind of event (the same comparison as the earlier analysis)
+# [x] 4. Candidate features, added in memory (feature_sets.add_event_candidates):
+#        Part 1  city_*        one city-wide flag per event kind (the same value at every station)
+#        Part 2  event_nearby  1 at a chosen station on the shifts of its event kind
 
-VENUES = pd.DataFrame({"venue": ["Lumen Field", "T-Mobile Park", "Climate Pledge Arena", "Husky Stadium"],
-                       "lat": [47.5952, 47.5914, 47.6221, 47.6503],
-                       "lon": [-122.3316, -122.3325, -122.3540, -122.3016]}).set_index("venue")
-
-
-def nearest_stations(venue, k=2):
-    """The k stations closest to a venue (flat-map distance, scaled for latitude)."""
-    lat, lon = VENUES.loc[venue, ["lat", "lon"]]
-    dist = np.hypot(stations["lat"] - lat, (stations["lon"] - lon) * np.cos(np.radians(lat)))
-    return list(dist.nsmallest(k).index)
-
-
-calls = df.pivot(index=DATE_COL, columns=STATION_COL, values=TARGET).asfreq("D")
-CHOOSE_END = pd.Timestamp("2025-01-01")     # choose the pairs on 2022-2024 only
-
-
-def event_effect(station, days, before):
-    """Mean extra calls on event shifts vs same-weekday shifts within +-4 weeks, using shifts before `before`."""
-    s = calls[station][calls.index < before].dropna()
-    days = set(days)
-    diffs, usual = [], []
-    for d0 in sorted(days & set(s.index)):
-        around = [d0 + pd.Timedelta(weeks=k) for k in (-4, -3, -2, -1, 1, 2, 3, 4)]
-        around = [d for d in around if d in s.index and d not in days]
-        if len(around) >= 3:
-            diffs.append(s[d0] - s[around].mean())
-            usual.append(s[around].mean())
-    diffs = np.array(diffs)
-    if len(diffs) < 2:
-        return len(diffs), np.nan, np.nan, np.nan, np.nan
-    t = diffs.mean() / (diffs.std(ddof=1) / np.sqrt(len(diffs)))
-    return len(diffs), np.mean(usual), diffs.mean(), 100 * diffs.mean() / np.mean(usual), t
-
-
-rows = []
-for (kind, venue), group in events.groupby(["kind", "venue"]):
-    for station in nearest_stations(venue):
-        n, usual, extra, pct, t = event_effect(station, group["ShiftDate"], CHOOSE_END)
-        rows.append({"kind": kind, "venue": venue, "station": station, "events": n,
-                     "usual_calls": usual, "extra_calls": extra, "extra_pct": pct, "t": t})
-effects = pd.DataFrame(rows)
-
-# a pair is kept if the effect is clear on 2022-2024: at least 10 events, +10% or more, t >= 2
-chosen = effects[(effects["events"] >= 10) & (effects["extra_pct"] >= 10) & (effects["t"] >= 2)]
-PAIRS = list(zip(chosen["kind"], chosen["venue"], chosen["station"]))
-
-# station-level flag: 1 at a chosen station on the shifts of its event kind
-df["event_nearby"] = 0
-for kind, venue, station in PAIRS:
-    days = set(events.loc[(events["kind"] == kind) & (events["venue"] == venue), "ShiftDate"])
-    df.loc[day.isin(days) & df[STATION_COL].eq(station), "event_nearby"] = 1
+df, EVENT_GROUPS = add_event_candidates(df, events, PAIRS)
+CITY_FLAGS = EVENT_GROUPS["city event flags"]
 
 # [x] 5. Versions to compare (all with the same GBM settings as evaluate_models.py):
 #        a. station x weekday mean (baseline)
@@ -118,10 +63,13 @@ for kind, venue, station in PAIRS:
 #        e. + special days + event_nearby as a GBM feature (part 2)
 #        f. + special days, then add the average extra calls of each chosen pair
 #           (learned from each fold's training shifts only) to the GBM forecast (part 2)
+#        g. as f, but the amount added is the GBM's own mean residual (actual minus
+#           forecast) on the pair's training event shifts, from out-of-fold predictions.
+#           The raw uplift in f may count part of the effect twice if the GBM already
+#           predicts some of it (e.g. through weekday, month or lag7).
 
-NEW = SPECIAL + CITY_FLAGS + ["event_nearby"]
 X_all, _ = build_features(df, extra_exclude=["year"])
-CURRENT = [c for c in X_all.columns if c not in NEW]
+CURRENT = baseline_columns(X_all)   # feature_sets.BASELINE_NUMERIC + station and weekday dummies
 
 
 def fit_gbm(columns, train, validation):
@@ -134,16 +82,51 @@ def gbm(columns):
     return lambda train, validation: fit_gbm(columns, train, validation)
 
 
+def pair_days(kind, venue):
+    return event_days(events, kind, venue)
+
+
+# amount added per fold and pair, by method (printed at the end)
+adjustments = []
+
+
 def gbm_plus_adjustment(train, validation):
     """GBM with special days, plus each chosen pair's mean extra calls from the training shifts."""
     pred = fit_gbm(CURRENT + SPECIAL, train, validation)
     # the +-4 week neighbours of a training event must be training shifts too
     cutoff = train[DATE_COL].max() - pd.Timedelta(days=28)
     for kind, venue, station in PAIRS:
-        days = set(events.loc[(events["kind"] == kind) & (events["venue"] == venue), "ShiftDate"])
-        extra = event_effect(station, days, cutoff)[2]
+        days = pair_days(kind, venue)
+        extra = event_effect(calls, station, days, cutoff)[2]
         rows_hit = (validation[DATE_COL].isin(days) & validation[STATION_COL].eq(station)).to_numpy()
         pred[rows_hit] += extra
+        adjustments.append({"fold": validation[DATE_COL].min().date(), "pair": f"{kind} @ {station}",
+                            "method": "uplift (f)", "added": extra})
+    return pred
+
+
+def out_of_fold(train, rows):
+    """GBM forecasts for the given training rows, each from a model that did not see its year."""
+    year = train[DATE_COL].dt.year
+    pred = pd.Series(np.nan, index=rows)
+    for y in sorted(year.loc[rows].unique()):
+        held_out = rows[year.loc[rows] == y]
+        pred[held_out] = fit_gbm(CURRENT + SPECIAL, train[year != y], train.loc[held_out])
+    return pred
+
+
+def gbm_plus_residual_adjustment(train, validation):
+    """GBM with special days, plus each pair's mean out-of-fold residual on its training event shifts."""
+    pred = fit_gbm(CURRENT + SPECIAL, train, validation)
+    hits = {pair: train.index[train[DATE_COL].isin(pair_days(*pair[:2])) & train[STATION_COL].eq(pair[2])]
+            for pair in PAIRS}
+    oof = out_of_fold(train, pd.Index(sorted(set().union(*hits.values()))))
+    for (kind, venue, station), rows in hits.items():
+        extra = (train.loc[rows, TARGET] - oof[rows]).mean()
+        rows_hit = (validation[DATE_COL].isin(pair_days(kind, venue)) & validation[STATION_COL].eq(station)).to_numpy()
+        pred[rows_hit] += extra
+        adjustments.append({"fold": validation[DATE_COL].min().date(), "pair": f"{kind} @ {station}",
+                            "method": "residual (g)", "added": extra})
     return pred
 
 
@@ -162,13 +145,19 @@ VERSIONS = {
     "+ special days + city event flags": gbm(CURRENT + SPECIAL + CITY_FLAGS),
     "+ special days + event_nearby": gbm(CURRENT + SPECIAL + ["event_nearby"]),
     "+ special days + event adjustment": gbm_plus_adjustment,
+    "+ special days + residual adjustment": gbm_plus_residual_adjustment,
 }
+
+# which chosen pair (if any) each row belongs to; the two SFD 10 pairs never share a night
+df["pair"] = ""
+for kind, venue, station in PAIRS:
+    df.loc[day.isin(pair_days(kind, venue)) & df[STATION_COL].eq(station), "pair"] = f"{kind} @ {station}"
 
 # [x] 6. Rolling CV: fit every version on each fold's training shifts, predict the validation quarter
 
 parts = []
 for fold_start, train, validation in iter_folds(df):
-    fold = validation[[DATE_COL, STATION_COL, TARGET, "event_nearby"]].assign(fold=fold_start)
+    fold = validation[[DATE_COL, STATION_COL, TARGET, "event_nearby", "pair"]].assign(fold=fold_start)
     for name, fit_predict in VERSIONS.items():
         fold[name] = fit_predict(train, validation)
     parts.append(fold)
@@ -176,20 +165,25 @@ predictions = pd.concat(parts)
 names = list(VERSIONS)
 
 # [x] 7. Scores:
-#        - overall station MAE and citywide MAE, and in how many folds citywide MAE beats "+ special days"
+#        - station MAE and citywide MAE (mean over the folds), and in how many folds citywide MAE beats "+ special days"
 #        - error and bias (forecast minus actual) on the chosen event-station shifts
 
-station_err = predictions[names].sub(predictions[TARGET], axis=0).abs()
-city = predictions.groupby(["fold", DATE_COL])[[TARGET] + names].sum()
-city_err = city[names].sub(city[TARGET], axis=0).abs()
-fold_city = city_err.groupby(level="fold").mean().T
-
-overall = pd.DataFrame({"station_MAE": station_err.mean(), "citywide_MAE": city_err.mean()})
+# cv_utils.metrics() per fold, then the mean over the folds (as in evaluate_models.py)
+per_fold = pd.DataFrame([{"version": name, "fold": fold, **metrics(part, part[name].to_numpy())}
+                         for fold, part in predictions.groupby("fold") for name in names])
+overall = per_fold.groupby("version", sort=False)[["station_MAE", "station_RMSE", "citywide_MAE"]].mean()
+fold_city = per_fold.pivot(index="version", columns="fold", values="citywide_MAE").loc[names]
 overall["folds_better_city"] = fold_city.lt(fold_city.loc[BASE], axis=1).sum(axis=1)
 
 hit = predictions[predictions["event_nearby"] == 1]
 on_events = pd.DataFrame({"MAE": hit[names].sub(hit[TARGET], axis=0).abs().mean(),
                           "bias": hit[names].sub(hit[TARGET], axis=0).mean()})
+
+# bias per pair, for the versions that target the event shifts
+ADJUSTED = [BASE, "+ special days + event adjustment", "+ special days + residual adjustment"]
+by_pair = hit[ADJUSTED].sub(hit[TARGET], axis=0).groupby(hit["pair"]).mean()
+by_pair.insert(0, "shifts", hit.groupby("pair").size())
+added = pd.DataFrame(adjustments).pivot_table(index=["pair", "fold"], columns="method", values="added")
 
 # [x] 8. Print the results; decide with the team before adding the features to step4_features.py
 pd.set_option("display.width", 200)
@@ -203,6 +197,10 @@ print("\nCitywide MAE per fold:")
 print(fold_city.round(2).to_string())
 print(f"\nOn the chosen event-station shifts in 2025 ({len(hit)} rows):")
 print(on_events.round(3).to_string())
+print("\nBias (forecast minus actual) per pair on its 2025 event shifts:")
+print(by_pair.round(2).to_string())
+print("\nCalls added per event shift, by fold (learned from that fold's training shifts):")
+print(added.round(2).to_string())
 
 
 """
@@ -215,14 +213,22 @@ Seahawks          SFD 10   27      +3.8         +11%     2.19
 stadium concert   SFD 10   17      +4.1         +11%     2.11
 Other sports and arena concerts at the nearest stations: +0-4%, not chosen.
 
-2025 rolling CV (4 folds):
+2025 rolling CV (4 folds; station and citywide MAE = mean over the folds, as in evaluate_models.py):
 version                              station MAE  citywide MAE  on the 19 event-station shifts
                                                                  MAE     bias
 current GBM                          2.409        18.95         7.27    -4.94
 + special days                       2.406        18.73         7.13    -4.82
 + special days + city event flags    2.409        18.92         7.26    -4.93
-+ special days + event_nearby        2.406        18.86         6.75    -2.52
++ special days + event_nearby        2.405        18.85         6.75    -2.52
 + special days + event adjustment    2.405        18.75         6.17    -0.83
++ special days + residual adjustment 2.405        18.74         6.17    -1.03
+
+Bias per pair on its 2025 event shifts (+ special days / uplift f / residual g):
+Husky football @ SFD 22   (7 shifts)   -2.18 / +2.07 / +1.56
+Seahawks @ SFD 10         (8 shifts)   -5.71 / -1.69 / -1.51
+stadium concert @ SFD 10  (4 shifts)   -7.66 / -4.16 / -4.59
+Calls added per shift, mean over folds (uplift f / residual g):
+Husky 4.33 / 3.74, Seahawks 3.97 / 4.24, stadium concert 3.98 / 3.74.
 
 Part 1: a city-wide "event today" flag does not help (citywide MAE worse in
 all 4 folds): events only change calls next to the venue.
@@ -231,4 +237,9 @@ chosen pairs cuts the error on those shifts by 13% and almost removes the
 under-forecast (bias -4.8 -> -0.8), with overall MAE unchanged (only 19 of
 ~12,000 rows). Using event_nearby as a GBM feature helps less: the trees
 rarely split on a flag that is 1 in so few rows.
+Uplift vs residual: the two give the same MAE on the event shifts (6.17).
+At Husky football the GBM already predicts part of the effect, so the raw
+uplift over-adjusts (bias +2.1); the residual adds ~0.6 fewer calls (bias
++1.6). At SFD 10 both still under-forecast. With 4-8 shifts per pair in
+2025, the difference between the two methods is within noise.
 """

@@ -8,7 +8,7 @@ final forecast = GBM forecast + event adjustment
 
 The adjustment is 0 for every station-shift that is not on the list below. The model, its features and its training do not change.
 
-Status: proposed, not yet in `predict.py`. The team decides before the final model.
+Status: proposed, not yet in `predict.py`. The team decides before the final model. Following the code review, the amount added is the GBM's own out-of-fold residual on past events (section 3), which avoids counting effects the model already predicts.
 
 ---
 
@@ -97,32 +97,74 @@ Extra calls per event, by distance from the venue:
 
 ## 3. How the extra calls are computed
 
+Two numbers are involved, and they answer different questions:
+
+| | Question | Used for |
+|---|---|---|
+| **Uplift** | How many more calls are there on event shifts than on similar shifts without the event? | choosing the pairs (section 2) |
+| **Residual** | How many calls does the GBM miss on event shifts? | the amount added to the forecast (recommended) |
+
+The adjustment is added to the GBM forecast, so the amount should be what the GBM misses. The uplift can be larger: the GBM may already predict part of the effect through weekday, month or the lag features (e.g. Husky games are on autumn Saturdays). Adding the full uplift then counts that part twice.
+
+### Residual (recommended)
+
 For one pair (event kind, station), using **training shifts only**:
+
+1. Get **out-of-fold** GBM forecasts for the pair's training event shifts: split the training shifts by year; for each year, train the GBM (same features and settings) on the other years and predict that year. A model never predicts shifts it was trained on; otherwise it would fit them too closely and the residual would be too small.
+2. Residual for each event shift = actual calls − out-of-fold forecast.
+3. **Extra calls** = the mean residual over the pair's training event shifts.
+
+### Uplift (used to choose the pairs)
 
 1. For each training event shift `d`, take the calls at the station on `d`.
 2. Take the same weekday 1-4 weeks before and after `d` (up to 8 shifts). Drop shifts that have the same kind of event, and outage (masked) shifts. Keep the event only if at least 3 remain.
 3. The difference for this event = calls on `d` − mean calls on those shifts.
-4. **Extra calls** = the mean difference over all training events.
+4. **Uplift** = the mean difference over all training events.
 
 Each comparison shift lies within 4 weeks of its event. So training events from the last 28 days before the training cutoff are left out: their "after" weeks would fall outside the training data.
 
-The extra calls are **recomputed every time the model is retrained**. The numbers in section 2 are from 2022-2024 and will change slightly when 2025 is added. They are not fixed constants.
+Both numbers are **recomputed every time the model is retrained**. They are not fixed constants.
 
 ---
 
 ## 4. Results (2025 rolling CV, 4 folds)
 
+MAE is the mean over the 4 folds (`cv_utils.metrics()` per fold, as in `scripts/evaluate_models.py`).
+
 | Version | Station MAE | Citywide MAE | MAE on the 19 event-station shifts | Bias on them |
 |---|---|---|---|---|
 | Current GBM | 2.409 | 18.95 | 7.27 | −4.94 |
 | + special days | 2.406 | 18.73 | 7.13 | −4.82 |
-| + special days + adjustment | **2.405** | 18.75 | **6.17** | **−0.83** |
+| + special days + uplift adjustment | 2.405 | 18.75 | 6.17 | −0.83 |
+| + special days + **residual adjustment** | **2.405** | 18.74 | **6.17** | −1.03 |
 
 Bias is the forecast minus the actual (negative = under-forecast).
 
-- On event shifts at the chosen stations, the error drops by 13%. The under-forecast of almost 5 calls nearly disappears.
+- On event shifts at the chosen stations, the error drops by 13% with either amount. The under-forecast of almost 5 calls nearly disappears.
 - Overall MAE does not change, because event-station shifts are a very small share of all rows (19 of ~12,000 in 2025).
 - The gain is local, but it lands where it matters: the busiest station (SFD 10) on its busiest days.
+
+### Per pair
+
+Bias on each pair's 2025 event shifts:
+
+| Pair | 2025 shifts | No adjustment | Uplift | Residual |
+|---|---|---|---|---|
+| Husky football @ SFD 22 | 7 | −2.18 | **+2.07** | +1.56 |
+| Seahawks @ SFD 10 | 8 | −5.71 | −1.69 | −1.51 |
+| Stadium concert @ SFD 10 | 4 | −7.66 | −4.16 | −4.59 |
+
+Calls added per event shift (mean over the 4 folds, each learned from that fold's training shifts):
+
+| Pair | Uplift | Residual |
+|---|---|---|
+| Husky football @ SFD 22 | 4.33 | 3.74 |
+| Seahawks @ SFD 10 | 3.97 | 4.24 |
+| Stadium concert @ SFD 10 | 3.98 | 3.74 |
+
+- **Husky football:** the uplift over-adjusts (bias +2.07). The residual adds about 0.6 fewer calls in every fold, so the GBM already predicts part of this effect.
+- **SFD 10:** both amounts still under-forecast; neither over-adjusts.
+- With 4-8 shifts per pair in 2025, the difference between the two amounts is within noise. The residual is preferred because it measures what the forecast misses, and it adapts if a retrained model captures more of the effect.
 
 ---
 
@@ -142,13 +184,13 @@ Both schedules are published weeks to months ahead, so they are known 3 shifts b
 At training time (`scripts/train_model.py`):
 
 1. Train the GBM as usual.
-2. For each pair in section 2, compute the extra calls on the training data (section 3).
-3. Save the table, e.g. in `model_metadata.json`:
+2. For each pair in section 2, compute the extra calls on the training data: the mean out-of-fold residual (section 3). This trains one extra GBM per training year.
+3. Save the table, e.g. in `model_metadata.json` (values from the last 2025 fold, as an example):
    ```json
    "event_adjustment": [
-     {"kind": "Husky football",  "venue": "Husky Stadium", "station": "SFD 22", "extra_calls": 4.4},
-     {"kind": "Seahawks",        "venue": "Lumen Field",   "station": "SFD 10", "extra_calls": 3.8},
-     {"kind": "stadium concert", "venue": "Lumen Field",   "station": "SFD 10", "extra_calls": 4.1}
+     {"kind": "Husky football",  "venue": "Husky Stadium", "station": "SFD 22", "extra_calls": 3.75},
+     {"kind": "Seahawks",        "venue": "Lumen Field",   "station": "SFD 10", "extra_calls": 3.95},
+     {"kind": "stadium concert", "venue": "Lumen Field",   "station": "SFD 10", "extra_calls": 4.30}
    ]
    ```
 
@@ -167,6 +209,7 @@ The app can show a note on those shifts, e.g. "Seahawks home game: +4 calls expe
 - **Few events.** Each pair has only 17-27 training events, so the estimate is uncertain. The Seahawks and concert effects (t ≈ 2.1-2.2) are just above the bar. With more years the estimate becomes more reliable.
 - **Unseen events.** The adjustment only covers event kinds seen in training. The **2026 FIFA World Cup** matches at Lumen Field (June-July 2026, in the test period) have no training examples. The forecast for those shifts may be too low. We report this as a known limitation instead of adding a rule after seeing the test results.
 - **Concert data.** setlist.fm is user-contributed and lists only shows that took place (cancelled shows are removed). For large venues cancellations are rare. A few small stadium events (e.g. a single local artist) remain in the stadium list. For live forecasting of future shows, an official ticketing source (e.g. Ticketmaster) would be more complete.
+- **Out-of-fold models see less data.** Each out-of-fold GBM is trained without one year, so it is slightly weaker than the final model, and the residual may be slightly too large.
 - **One number per pair.** The adjustment is the same for every game of a kind. It does not depend on attendance, kickoff time or the opponent. Football games are near capacity every time, and concert attendance is not published, so the venue stands in for crowd size.
 
 ---
