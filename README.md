@@ -35,6 +35,7 @@ The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is 
 | Prediction   | `predict.py`                        | saved model + feature rows → predicted calls per station                                                  |
 | Step 8       | `scripts/step8_weather.py`          | `data/modeling_dataset.csv` + Open-Meteo → `data/modeling_dataset_weather.csv`                            |
 | Step 9       | `scripts/step9_weather_compare.py`  | `data/modeling_dataset_weather.csv` → rolling-CV scores with and without weather (printed)                |
+| Step 15      | `scripts/step15_weather_extremes.py` | `data/modeling_dataset_weather.csv` → forecast skill, effect size and CV for rare extreme weather (printed) |
 
 Scripts run from the repository root (`uv run python scripts/<name>.py`). Notebooks live in `notebooks/` and read files with `../data/`.
 `scripts/cv_utils.py` holds the folds, features and metrics shared by steps 5 and 6.
@@ -151,6 +152,33 @@ Means over the 4 folds of 2025. The 3 features are `precip_sum`, `snow_sum` and 
 - **C′ vs A′:** with the same training rows (2024-01-21 onward, only 339 shifts in fold 1), the forecast adds +0.47 citywide MAE with all 6 features and −0.06 with 3. So the forecast does not help, and the extra features add noise.
 - **Extreme weather** (2025, ERA5 top 10% by rain or gusts, or any snow): perfect weather helps a little (citywide MAE −1.0 on heavy rain, −2.0 on strong wind, −1.2 on snow). On heavy rain and strong wind every forecast version is worse than A. On snow only C′ is lower (20.6), and C doubles the error (21.9 → 43.9; 22.6 after calibration). These subsets have only 11–37 shifts. A and A′, which differ only in training rows, already differ by up to 0.9 on them, so these numbers are noisy.
 - **Limits:** one untuned model and one point of weather for the whole city. GFS forecasts exist only from 2024-01-21 (snowfall from 2024-12-09), which leaves C′ and the calibration little training data. The results cover 2025 only, and 2026 is still unused.
+
+### Step 15: Rare extreme weather (`scripts/step15_weather_extremes.py`)
+
+Step 9 found that weather matters only on rare extreme shifts. This step looks at them directly: strong wind (ERA5 `gust_max` ≥ 70 km/h), freezing (`temp_min` ≤ 0 °C) and snow (`snow_sum` ≥ 1 cm). It uses the same folds, training gap, metrics and untuned Poisson GBM as Steps 6 and 9, on the baseline features (A = 18.95), and drops 2026. All thresholds were fixed before looking at results. The forecast strong-wind threshold is 65 km/h, because GFS gusts are about 4 km/h weaker than ERA5 (Step 8); the hit/miss counts below were not used to choose it. Back-to-back extreme shifts count as one event.
+
+- **(a) Can the forecast see it?** From 2024-01-21 to 2025 (706 shifts): a forecast gust ≥ 65 catches 6 of the 10 ERA5 strong-wind shifts, and 8 of its 14 warnings are false alarms. Freezing is easy (19 of 20 caught, 13 false alarms). Snow ≥ 1 cm is never forecast: 0 of 4 caught.
+- **(b) Effect size:** calls compared with usual (same weekday ±4 weeks, non-extreme shifts), 2022–2025, with a 95% interval from resampling whole events. Strong wind: +12.2% (+7.5% to +18.5%; 17 shifts, 15 events). Freezing: +11.4% (+1.6% to +24.8%; 54 shifts but only 18 events). Snow: +3.8% (−0.9% to +8.9%; 20 shifts, 15 events), no clear effect. Some strong-wind shifts fall near holidays (2025-10-31 Halloween, 2022-12-27 after Christmas), so part of the wind effect may be a holiday effect. The extra calls are mostly at SFD 2, 39 and 24.
+- **(c) Ways to use it**, 2025 rolling CV (means over the 4 folds; the last two columns are citywide MAE on 2025 subsets):
+
+| Version | What it does                                                            | Station MAE | Citywide MAE (vs A) | Strong wind, ERA5 (7 shifts) | Strong-wind forecast (9 shifts) |
+| ------- | ----------------------------------------------------------------------- | ----------- | ------------------- | ---------------------------- | ------------------------------- |
+| A       | no weather                                                              | 2.409       | 18.95               | 26.7                         | 21.1                            |
+| F       | 0/1 flags: ERA5 in training, forecast in validation                     | 2.442       | 20.70 (+1.76)       | 24.6                         | 28.9                            |
+| W5      | F, extreme training shifts weighted 5×                                  | 2.454       | 20.95 (+2.01)       | 24.2                         | 33.3                            |
+| W20     | F, extreme training shifts weighted 20×                                 | 2.485       | 21.68 (+2.73)       | 24.2                         | 34.8                            |
+| F′      | forecast flags in training and validation, from 2024-01-21              | 2.420       | 19.67 (+0.73)       | 34.5                         | 34.7                            |
+| A′      | no weather, from 2024-01-21                                             | 2.417       | 19.18 (+0.23)       | 26.1                         | 21.8                            |
+| R       | A × r on strong-wind forecasts, r from forecast-flagged training shifts | 2.410       | 18.99 (+0.05)       | 26.0                         | 23.2                            |
+| R5      | A × r, r from ERA5 strong-wind training shifts                          | 2.415       | 19.44 (+0.50)       | 32.6                         | 41.4                            |
+
+R scales the no-weather prediction when the forecast says strong wind. In each fold, r is estimated only from training shifts: the flagged shifts and their ±4-week usual shifts all fall before the training cutoff, and an assert checks that no validation shift is used. R's r is 1.03–1.05, because forecast-flagged training shifts include false alarms; R5's r is 1.13–1.14, the effect of real storms.
+
+- **Main result:** no method beats A. R comes closest (+0.05): it helps a little on real storms (26.7 → 26.0) but loses on false alarms (21.1 → 23.2). Applying the full storm effect (R5) to forecasts that are wrong half the time over-predicts by 33 calls on the flagged shifts. F′ is +0.50 against A′, which uses the same training rows.
+- **Why the flags fail:** most of the damage comes from the freezing flag. On 2025's freezing shifts, F over-predicts by 39 calls citywide (MAE 24.3 → 54.2). The ERA5 freezing shifts in training include the late-December 2022 cold spell, which coincided with the Christmas peak (646 calls on 2022-12-23), so the model most likely learned that freezing means far more calls. Weighting the extreme shifts makes it worse.
+- **Sample size:** 2025 has only 7 strong-wind shifts (5 events), 6 of them in fold 4. Folds 2 and 3 have no strong-wind forecast, so R equals A there. Freezing has 19 shifts but 4 events, snow 4 shifts. These are case studies, not statistics; the script prints each 2025 strong-wind shift with the actual and predicted citywide calls.
+- **(d) More history:** ERA5 has 106 strong-wind shifts (82 events) in 2003–2019, 6.2 per year against 4.2 in 2022–2025, so about 6 times more events (2020–21 left out). This is not suitable for retraining: call coding changed several times between 2014 and 2022, so older counts are not on the same scale as 2022 onward. The older years could firm up the effect estimate, since a ratio to the surrounding weeks is less sensitive to slow coding changes, but that needs the raw export and would not fix the forecast's false alarms. Only the yearly counts are saved (`data/era5_strong_wind_counts_2003_2019.csv`).
+- **Recommendation:** keep weather out of the model. In the app, a strong-wind forecast can at most show a note marked for reference only (for example, past storms averaged about 12% more calls, and about half of such forecasts were false alarms), without changing the predicted numbers.
 
 ## Streamlit app
 
