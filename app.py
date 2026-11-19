@@ -7,11 +7,14 @@ import streamlit as st
 from app_data import (
     GROUPS,
     ROOT,
+    add_likely_range,
+    citywide_range,
     first_model_date,
     forecast_origin,
     hourly_allocation,
     known_history,
     learned_predictions,
+    load_ranges,
     load_tables,
     reference_predictions,
     target_dates,
@@ -23,9 +26,20 @@ COLUMN_NAMES = {
     "predicted_calls": "Expected calls",
     "usual_calls": "Usual for this weekday",
     "difference": "Difference",
+    "low": "Low",
+    "high": "High",
     "ShiftDate": "Shift date",
     "AsOf": "Planning time",
 }
+# Column order for the table and the download.
+TABLE_COLUMNS = [
+    "Station",
+    "predicted_calls",
+    "low",
+    "high",
+    "usual_calls",
+    "difference",
+]
 
 # Outside pages a planner can open for live incidents and for station coverage.
 LINKS = (
@@ -107,6 +121,8 @@ try:
     min_date, max_date, default_date = target_dates(
         counts, first_model_date(), features["ShiftDate"].max().date()
     )
+    # bands, city_range: prediction_ranges.csv supplies the likely range around each estimate.
+    bands, city_range = load_ranges()
 except (OSError, ValueError, KeyError) as exc:
     # Stop the page if required CSVs are missing or their contents do not agree.
     st.error(f"Cannot read the shared data: {exc}")
@@ -138,13 +154,13 @@ st.sidebar.caption(
     "Only uses shifts that had finished by the planning time (Thursday 08:00 for a Saturday shift)."
 )
 
-forecast_tab, history_tab, about_tab = st.tabs(
-    ["Forecast", "Explore history", "Data and limits"]
+prediction_tab, explore_tab, about_tab = st.tabs(
+    ["Prediction", "Explore", "Data and limits"]
 )
 # Keep only completed earlier shifts from the counts CSV, excluding suspected outages.
 history = known_history(counts, target_date)
 
-with forecast_tab:
+with prediction_tab:
     end = pd.Timestamp(target_date) + pd.Timedelta(days=1)
     # After the last day of counts the shift has not happened yet, so it is labelled Forecast.
     is_forecast = target_date > last
@@ -185,6 +201,8 @@ with forecast_tab:
             validate="one_to_one",
         )
         view["difference"] = view["predicted_calls"] - view["usual_calls"]
+        # Low and high: the estimate plus the usual misses for a forecast of that size.
+        view = add_likely_range(view, bands)
         selected = view.set_index("Station").loc[station]
         # Show all stations added together and the selected station's individual estimate.
         left, right = st.columns(2)
@@ -194,6 +212,15 @@ with forecast_tab:
             f"{selected['predicted_calls']:.1f}",
             delta=f"{selected['difference']:+.1f} vs usual",
             delta_color="off",
+        )
+        city_low, city_high = citywide_range(view["predicted_calls"].sum(), city_range)
+        left.caption(f"Likely range: {city_low} to {city_high}")
+        right.caption(
+            f"Likely range: {int(selected['low'])} to {int(selected['high'])}"
+        )
+        st.caption(
+            "Likely range: about 4 in 5 similar past shifts ended up inside it. "
+            "It shows how much the estimate can vary and is not a staffing recommendation."
         )
         st.caption(
             "Usual = the average of earlier shifts on this weekday. Difference = expected minus usual."
@@ -213,17 +240,26 @@ with forecast_tab:
         )
         st.caption("Dots are fire stations. Bigger dots mean more expected calls.")
         st.caption(LINKS)
+        st.caption("Low and High show the likely range for each station.")
         st.dataframe(
-            view.sort_values("predicted_calls", ascending=False).rename(
-                columns=COLUMN_NAMES
-            ),
+            view[TABLE_COLUMNS]
+            .sort_values("predicted_calls", ascending=False)
+            .rename(columns=COLUMN_NAMES),
             hide_index=True,
             width="stretch",
+            # Show one decimal, like the cards above; the full numbers stay in the table.
+            column_config={
+                COLUMN_NAMES[c]: st.column_config.NumberColumn(format="%.1f")
+                for c in ("predicted_calls", "usual_calls", "difference")
+            },
         )
-        # Create a download table with the counts, target date, and planning time.
-        download = view.assign(
-            ShiftDate=str(target_date), AsOf=origin.isoformat()
-        ).rename(columns=COLUMN_NAMES)
+        # Create a download table with the counts as shown, the likely range, the target date, and the planning time.
+        download = (
+            view[TABLE_COLUMNS]
+            .round(1)
+            .assign(ShiftDate=str(target_date), AsOf=origin.isoformat())
+            .rename(columns=COLUMN_NAMES)
+        )
         st.download_button(
             "Download displayed counts",
             download.to_csv(index=False),
@@ -265,13 +301,15 @@ with forecast_tab:
                 pd.date_range(series.index.min(), series.index.max(), freq="D")
             ),
         )
-        st.caption("Gaps are outage shifts. A 0 means the station really had no calls.")
+        st.caption(
+            "Gaps are shifts with missing data. A 0 means the station really had no calls."
+        )
 
-with history_tab:
-    # Build comparisons from the same earlier, unmasked counts used in the Forecast tab.
+with explore_tab:
+    # Build comparisons from the same earlier, unmasked counts used in the Prediction tab.
     st.subheader("Patterns before the selected planning time")
     st.caption(
-        "Same history as the Forecast tab: finished shifts only, no outage shifts."
+        "Same history as the Prediction tab: finished shifts only, without shifts that have missing data."
     )
     part = history.loc[history["Station"] == station].copy()
     if part.empty:
@@ -310,6 +348,10 @@ with about_tab:
     )
     st.write(
         '"Usual for this weekday" is the average of earlier shifts on the same weekday. Every estimate uses only shifts that had finished by the planning time.'
+    )
+    st.markdown("**About the likely range**")
+    st.write(
+        "The likely range comes from how far our estimates were from what really happened across 2025, for stations with a similar expected count. About 4 in 5 of those shifts ended up inside it. Some shifts will still land outside it, and it does not say how many units to send."
     )
     st.markdown("**What is left out**")
     st.write(

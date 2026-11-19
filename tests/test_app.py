@@ -18,11 +18,14 @@ from streamlit.testing.v1 import AppTest
 
 from app_data import (
     ROOT,
+    add_likely_range,
+    citywide_range,
     first_model_date,
     forecast_origin,
     hourly_allocation,
     known_history,
     learned_predictions,
+    load_ranges,
     load_tables,
     reference_predictions,
     target_dates,
@@ -284,6 +287,68 @@ class ForecastTests(AppTestCase):
         self.assertEqual(len(usual), 34)
 
 
+# Likely range: how far real calls usually land from an estimate (data/prediction_ranges.csv).
+
+
+class LikelyRangeTests(AppTestCase):
+    def test_ranges_file_loads_and_covers_every_size(self):
+        bands, city = load_ranges()
+        self.assertEqual(len(bands), 5)
+        self.assertEqual(bands.predicted_from.iloc[0], 0)
+        self.assertTrue((bands.low < 0).all() and (bands.high > 0).all())
+        self.assertTrue(city.low < 0 < city.high)
+        # Bigger forecasts miss by more, so the ranges get wider.
+        self.assertTrue((bands.high - bands.low).is_monotonic_increasing)
+
+    def test_rejects_broken_range_files(self):
+        good = pd.read_csv(ROOT / "data/prediction_ranges.csv")
+        stations = good.level == "station"
+        broken = {
+            "a missing column": good.drop(columns="high"),
+            "a gap between bands": good.assign(
+                predicted_from=good.predicted_from.where(good.index != 2, 11)
+            ),
+            "a low above zero": good.assign(low=good.low.where(good.index != 0, 1.0)),
+            "two citywide rows": pd.concat([good, good[~stations]]),
+            "an unknown level": good.assign(
+                level=good.level.where(good.index != 0, "x")
+            ),
+        }
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "data").mkdir()
+            good.to_csv(root / "data/prediction_ranges.csv", index=False)
+            load_ranges(root)  # the unbroken copy loads fine
+            for name, frame in broken.items():
+                frame.to_csv(root / "data/prediction_ranges.csv", index=False)
+                with self.assertRaises(ValueError, msg=name):
+                    load_ranges(root)
+
+    def test_low_and_high_surround_each_estimate(self):
+        bands, _ = load_ranges()
+        # 1.0 would go below zero, 5.0 is the top of the first band, 39.3 is SFD 10 on Oct 24.
+        view = pd.DataFrame({"predicted_calls": [1.0, 5.0, 5.1, 12.0, 39.3, 80.0]})
+        result = add_likely_range(view, bands)
+        self.assertTrue((result.low >= 0).all())
+        self.assertTrue((result.low <= result.predicted_calls).all())
+        self.assertTrue((result.high >= result.predicted_calls).all())
+        self.assertEqual(result.low[0], 0)  # 1.0 - 2.4 is clamped to 0
+        self.assertEqual(
+            result.high[1], round(5.0 + bands.high[0])
+        )  # 5.0 uses the first band
+        self.assertEqual(
+            result.high[2], round(5.1 + bands.high[1])
+        )  # 5.1 uses the second
+        self.assertEqual((result.low[4], result.high[4]), (32, 48))
+        self.assertEqual(
+            result.high[5], round(80.0 + bands.high.iloc[-1])
+        )  # past the last band
+
+    def test_citywide_range(self):
+        _, city = load_ranges()
+        self.assertEqual(citywide_range(313.6, city), (284, 346))
+
+
 # Hourly breakdown: splitting one shift total into 24 hours.
 
 
@@ -322,6 +387,25 @@ class HourlyBreakdownTests(unittest.TestCase):
 
 
 class ScreenTests(unittest.TestCase):
+    def test_tab_names_and_explore_charts(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        self.assertFalse(app.exception, [e.message for e in app.exception])
+        self.assertEqual(
+            [t.label for t in app.tabs], ["Prediction", "Explore", "Data and limits"]
+        )
+        # Explore keeps the history charts; model performance stays out of the app.
+        explore = " ".join(c.value for c in app.tabs[1].caption)
+        self.assertIn("Same history as the Prediction tab", explore)
+        shown = " ".join(
+            x.value
+            for tab in app.tabs
+            for x in (*tab.markdown, *tab.caption, *tab.subheader)
+        )
+        self.assertNotIn("station_errors", shown)
+        # Our word for a gap in the feed stays off the screen.
+        self.assertNotIn("outage", shown)
+        self.assertIn("missing data", shown)
+
     def test_default_screen_and_station_switch(self):
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
         self.assertFalse(app.exception, [e.message for e in app.exception])
@@ -335,8 +419,17 @@ class ScreenTests(unittest.TestCase):
         self.assertAlmostEqual(table["Expected calls"].sum(), 313.6, delta=0.05)
         self.assertEqual(
             list(table.columns),
-            ["Station", "Expected calls", "Usual for this weekday", "Difference"],
+            [
+                "Station",
+                "Expected calls",
+                "Low",
+                "High",
+                "Usual for this weekday",
+                "Difference",
+            ],
         )
+        self.assertTrue((table["Low"] <= table["Expected calls"]).all())
+        self.assertTrue((table["Expected calls"] <= table["High"]).all())
         # Switching station changes the station number, not the citywide total.
         app.sidebar.selectbox[0].select("SFD 2").run()
         self.assertFalse(app.exception)
@@ -353,6 +446,23 @@ class ScreenTests(unittest.TestCase):
         self.assertIn("sfdlive.com", text)
         self.assertIn("seattlebreaking.com", text)
         self.assertNotIn("github.com", text)
+
+    def test_likely_range_is_shown_for_city_station_and_table(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        captions = [c.value for c in app.caption]
+        # The city and the selected station (SFD 10, expected 39.3) each get a range.
+        self.assertIn("Likely range: 284 to 346", captions)
+        self.assertIn("Likely range: 32 to 48", captions)
+        meaning = next(c for c in captions if "4 in 5" in c)
+        self.assertIn("not a staffing recommendation", meaning)
+        self.assertIn("Low and High show the likely range for each station.", captions)
+        # No model scores or fold talk next to it.
+        text = " ".join(captions + [x.value for x in app.markdown])
+        for word in ["MAE", "RMSE", "fold", "cross-valid", "cross valid"]:
+            self.assertNotIn(word, text)
+        # The range follows the date: Oct 31 has its own estimate and range.
+        app.sidebar.date_input[0].set_value(date(2026, 10, 31)).run(timeout=60)
+        self.assertIn("Likely range: 281 to 344", [c.value for c in app.caption])
 
     def test_model_error_is_looked_up_and_shown_once(self):
         # A model failure should give one warning, and the page should ask the model once.

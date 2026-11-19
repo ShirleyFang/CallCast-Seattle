@@ -173,7 +173,7 @@ def read_forecast_features(root, station_ids, last_count, columns):
 
 
 def first_model_date(root=ROOT):
-    """First target date the trained model can serve, or None if its dates can't be read."""
+    # First target date the trained model can serve, or None if its dates can't be read.
     # Same rule as learned_predictions: a target must be at least 3 days after the
     # model's last training shift, so earlier dates would only replay its training data.
     try:
@@ -375,7 +375,7 @@ def hourly_allocation(root, target, station, total):
     hours = (end - start).total_seconds() / 3600
     if hours != 24:
         raise ValueError(
-            f"The hourly breakdown is not available for this shift: the clocks change during it, so it is {hours:.0f} hours long."
+            f"No hourly breakdown for this shift: the clocks change, so it is {hours:.0f} hours long."
         )
     # Each row gives one station, one shift hour, its share of calls, and its history cutoff.
     profile = pd.read_csv(path)
@@ -413,3 +413,54 @@ def hourly_allocation(root, target, station, total):
     part["expected_calls"] = shares * total
     part["hour"] = part["shift_hour"].map(lambda h: f"{(int(h) + 8) % 24:02d}:00")
     return part.sort_values("shift_hour")
+
+
+def load_ranges(root=ROOT):
+    """Read prediction_ranges.csv: how far real calls usually land from an estimate."""
+    ranges = pd.read_csv(root / "data/prediction_ranges.csv")
+    if {"level", "predicted_from", "predicted_to", "low", "high"} - set(ranges.columns):
+        raise ValueError("prediction_ranges.csv is missing columns.")
+    bands = ranges[ranges["level"] == "station"].sort_values("predicted_from")
+    city = ranges[ranges["level"] == "citywide"]
+    if set(ranges["level"]) - {"station", "citywide"} or len(city) != 1 or bands.empty:
+        raise ValueError(
+            "prediction_ranges.csv needs one citywide row and station bands."
+        )
+    # Every estimate must land in exactly one band, so the bands start at 0 with no gap.
+    starts, ends = bands["predicted_from"].to_numpy(), bands["predicted_to"].to_numpy()
+    if starts[0] != 0 or (starts[1:] != ends[:-1]).any():
+        raise ValueError(
+            "Station bands must start at 0 and follow each other with no gap."
+        )
+    if (
+        ranges[["low", "high"]].isna().any().any()
+        or (ranges["low"] > 0).any()
+        or (ranges["high"] < 0).any()
+    ):
+        raise ValueError(
+            "Every range needs a low of 0 or less and a high of 0 or more."
+        )
+    return bands.reset_index(drop=True), city.iloc[0]
+
+
+def add_likely_range(view, bands):
+    """Add whole-number low and high columns: each estimate plus the usual misses for its size."""
+    band = np.searchsorted(
+        bands["predicted_to"].to_numpy(), view["predicted_calls"], side="left"
+    )
+    band = band.clip(max=len(bands) - 1)
+    view = view.copy()
+    view["low"] = (
+        (view["predicted_calls"] + bands["low"].to_numpy()[band])
+        .clip(lower=0)
+        .round()
+        .astype(int)
+    )
+    view["high"] = (
+        (view["predicted_calls"] + bands["high"].to_numpy()[band]).round().astype(int)
+    )
+    return view
+
+
+def citywide_range(total, city):
+    return round(max(total + city["low"], 0)), round(total + city["high"])
