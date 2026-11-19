@@ -12,12 +12,21 @@ later than the last training label. The future 3-shift feature CSV is supported
 by the standalone date API; Ryan's current date picker remains historical-only.
 """
 from pathlib import Path
+import sys
 
 import joblib
 import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent  # predict.py belongs in repo root
+SCRIPTS_DIR = ROOT / "scripts"
+# feature_sets.py lives next to cv_utils.py in scripts/; make both importable
+# when Ryan loads this root-level file with importlib.util.spec_from_file_location.
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from feature_sets import add_special_days
+
 HISTORY_PATH = ROOT / "data" / "modeling_dataset.csv"
 FORECAST_PATH = ROOT / "data" / "forecast_features.csv"
 MODEL_PATH = ROOT / "models" / "poisson_gbm.joblib"
@@ -66,12 +75,30 @@ def supported_dates():
 def _predict_rows(rows):
     """Apply the exact saved training schema to raw model feature rows."""
     bundle = _bundle()
+    if rows.empty:
+        raise ValueError("No feature rows to predict")
+
+    # Ryan passes the baseline CSV columns plus ShiftDate as context.
+    # Recreate the same derived features used during training and 2025 CV.
+    # Old model bundles without derived_features still work without ShiftDate.
+    derived = bundle.get("derived_features", [])
+    if derived and DATE_COL in rows.columns:
+        rows = rows.copy()
+        rows[DATE_COL] = pd.to_datetime(rows[DATE_COL], errors="raise")
+        if rows[DATE_COL].isna().any():
+            raise ValueError("ShiftDate cannot be blank")
+        rows["weekday"] = rows[DATE_COL].dt.dayofweek
+        rows, _ = add_special_days(rows)
+    elif derived and not set(derived).issubset(rows.columns):
+        raise ValueError(
+            "ShiftDate is required to compute special-day features. "
+            "In app_data.py, pass rows[[*columns, 'ShiftDate']] to predict_shift."
+        )
+
     required = {STATION_COL, "weekday", *bundle["numeric"]}
     missing = required - set(rows.columns)
     if missing:
         raise ValueError(f"Missing prediction features: {sorted(missing)}")
-    if rows.empty:
-        raise ValueError("No feature rows to predict")
     if rows[STATION_COL].isna().any() or rows[STATION_COL].duplicated().any():
         raise ValueError("Prediction requires one row per non-null Station")
     numeric = rows[bundle["numeric"]].astype(float)

@@ -23,25 +23,26 @@ The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is 
 
 ## Pipeline
 
-| Step         | File                                | Input → output                                                                                            |
-| ------------ | ----------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Cleaning     | `notebooks/data_clean.ipynb`        | raw export → `data/station_shift_counts.csv`                                                              |
-| Step 1       | `scripts/step1_inspect.py`          | `station_shift_counts.csv` → structure checks (printed)                                                   |
-| Step 2       | `scripts/step2_sec2.py`             | `station_shift_counts.csv` → target distribution and histogram (proposal Section 2)                       |
-| Step 3       | `scripts/step3_baseline.py`         | `station_shift_counts.csv` → baseline scores (proposal Section 3)                                         |
-| Lag analysis | `notebooks/lag_analysis.ipynb`      | `station_shift_counts.csv` → choice of recent-call features                                               |
-| Step 4       | `scripts/step4_features.py`         | `station_shift_counts.csv` → `data/modeling_dataset.csv`                                                  |
-| Step 5       | `scripts/check_modeling_dataset.py` | `data/modeling_dataset.csv` → sanity checks (printed)                                                     |
-| Step 6       | `scripts/evaluate_models.py`        | `data/modeling_dataset.csv` → rolling-CV scores of baselines and first-pass models (printed)              |
-| Step 7       | `scripts/train_model.py`            | `data/modeling_dataset.csv` → trained Poisson GBM (`models/poisson_gbm.joblib`) and `model_metadata.json` |
-| Prediction   | `predict.py`                        | saved model + feature rows → predicted calls per station                                                  |
-| Step 8       | `scripts/step8_weather.py`          | `data/modeling_dataset.csv` + Open-Meteo → `data/modeling_dataset_weather.csv`                            |
-| Step 9       | `scripts/step9_weather_compare.py`  | `data/modeling_dataset_weather.csv` → rolling-CV scores with and without weather (printed)                |
-| Step 10      | `scripts/evaluate_by_station.py`    | `data/modeling_dataset.csv` → per-station model comparison and `data/station_errors.csv`                  |
-| Step 11      | `scripts/evaluate_lag_features.py`  | `data/modeling_dataset.csv` + `station_shift_counts.csv` → rolling-CV scores with extra lag features (printed) |
-| Step 12      | `scripts/evaluate_calendar_features.py` | `data/modeling_dataset.csv` → rolling-CV scores with extra calendar features (printed)                |
-| Step 13      | `scripts/fetch_events.py`, `scripts/fetch_concerts.py` | public schedules → `data/events.csv` (home games), `data/concerts.csv` (concerts)      |
-| Step 14      | `scripts/evaluate_events.py`        | `data/modeling_dataset.csv` + event schedules → event effects and rolling-CV scores (printed)             |
+| Step                 | File                                                    | Input → output                                                                                                         |
+| -------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Cleaning             | `notebooks/data_clean.ipynb`                            | raw export → `data/station_shift_counts.csv`                                                                           |
+| Step 1               | `scripts/step1_inspect.py`                              | `station_shift_counts.csv` → structure checks (printed)                                                                |
+| Step 2               | `scripts/step2_sec2.py`                                 | `station_shift_counts.csv` → target distribution and histogram (proposal Section 2)                                    |
+| Step 3               | `scripts/step3_baseline.py`                             | `station_shift_counts.csv` → baseline scores (proposal Section 3)                                                      |
+| Lag analysis         | `notebooks/lag_analysis.ipynb`                          | `station_shift_counts.csv` → choice of recent-call features                                                            |
+| Step 4               | `scripts/step4_features.py`                             | `station_shift_counts.csv` → `data/modeling_dataset.csv`                                                               |
+| Step 5               | `scripts/check_modeling_dataset.py`                     | `data/modeling_dataset.csv` → sanity checks (printed)                                                                  |
+| Step 6               | `scripts/evaluate_models.py`                            | `data/modeling_dataset.csv` → rolling-CV scores of baselines and first-pass models (printed)                           |
+| Step 7               | `scripts/train_model.py`                                | `data/modeling_dataset.csv` → trained Poisson GBM (`models/poisson_gbm.joblib`) and `model_metadata.json`              |
+| Prediction           | `predict.py`                                            | saved model + feature rows → predicted calls per station                                                               |
+| Step 8               | `scripts/step8_weather.py`                              | `data/modeling_dataset.csv` + Open-Meteo → `data/modeling_dataset_weather.csv`                                         |
+| Step 9               | `scripts/step9_weather_compare.py`                      | `data/modeling_dataset_weather.csv` → rolling-CV scores with and without weather (printed)                             |
+| Step 10              | `scripts/evaluate_by_station.py`                        | `data/modeling_dataset.csv` → per-station model comparison and `data/station_errors.csv`                               |
+| Step 11              | `scripts/evaluate_lag_features.py`                      | `data/modeling_dataset.csv` + `station_shift_counts.csv` → rolling-CV scores with extra lag features (printed)         |
+| Step 12              | `scripts/evaluate_calendar_features.py`                 | `data/modeling_dataset.csv` → rolling-CV scores with extra calendar features (printed)                                 |
+| Step 13              | `scripts/fetch_events.py`, `scripts/fetch_concerts.py`  | public schedules → `data/events.csv` (home games), `data/concerts.csv` (concerts)                                      |
+| Step 14              | `scripts/evaluate_events.py`                            | `data/modeling_dataset.csv` + event schedules → event effects and rolling-CV scores (printed)                          |
+| Step 15 Model tuning | `scripts/tune_model.py`, `scripts/grid_search_model.py` | Compare baseline and special-day features, perform grid search using 2025 rolling CV, and save `results/tuning_cv.csv` |
 
 Scripts run from the repository root (`uv run python scripts/<name>.py`). Notebooks live in `notebooks/` and read files with `../data/`.
 `scripts/cv_utils.py` holds the folds, features and metrics shared by the evaluation steps (6, 9, 11–14). `scripts/feature_sets.py` holds the baseline feature list and the candidate features for Steps 11–14.
@@ -99,7 +100,9 @@ Rolling cross-validation with four quarterly folds over 2025: each fold trains o
 
 ### Step 7: Train and save the model (`scripts/train_model.py`)
 
-Trains a Poisson Gradient Boosting model using shifts from 2022–2025, leaving 2026 out of training for final evaluation. The model uses the same feature configuration as Step 6, excluding `year`.
+Trains the selected Poisson GBM on 2022–2025 data, excluding `year` and keeping 2026 for final evaluation.
+
+The final model uses 52 features: the original 49 baseline features plus three special-day indicators (`is_nye`, `is_day_after_thanksgiving`, and `is_xmas`). These indicators are generated in memory using `feature_sets.add_special_days()` and are not stored in `modeling_dataset.csv`.
 
 Run from the repository root:
 
@@ -110,9 +113,47 @@ uv run python scripts/train_model.py
 This generates:
 
 - `models/poisson_gbm.joblib`: the trained model, feature column order, preprocessing information, and station × weekday averages.
-- `model_metadata.json`: the model name, training cutoff, raw feature columns, and missing-value support required by the Streamlit app.
+- `model_metadata.json`: the model name, training cutoff, raw input columns, derived special-day features, and missing-value support required by the Streamlit app.
 
-The model currently uses the first-pass configuration without hyperparameter tuning or weather features. Final model selection and evaluation on the 2026 test set are still pending.
+The model uses the best-performing configuration from the 2025 rolling-CV grid search: learning_rate=0.1, max_iter=200, max_leaf_nodes=31, and l2_regularization=0.0.
+
+Forecast weather and event adjustments are not included in the deployed model. The tuned model has not yet been evaluated on the 2026 test set.
+
+### Model tuning (`scripts/tune_model.py`, `scripts/grid_search_model.py`)
+
+We compared the original Poisson GBM with a model including three special-day features:
+
+- `is_nye`: New Year's Eve
+- `is_day_after_thanksgiving`: Black Friday
+- `is_xmas`: December 24–26
+
+We performed grid search using the same four quarterly rolling-CV folds in 2025, with a two-shift training gap.
+
+The parameter grid included:
+
+- `learning_rate`: 0.05, 0.1
+- `max_iter`: 100, 200
+- `max_leaf_nodes`: 15, 31
+- `l2_regularization`: 0.0, 1.0
+
+We evaluated 16 parameter combinations for each feature set, for 32 configurations and 128 model fits.
+
+#### Results
+
+| Model                | Features | Station MAE | Station RMSE | Citywide MAE |
+| -------------------- | -------- | ----------- | ------------ | ------------ |
+| Baseline Poisson GBM | 49       | 2.409       | 3.314        | 18.945       |
+| GBM + Special Days   | 52       | 2.406       | 3.302        | 18.727       |
+
+Adding special-day features reduced citywide MAE by approximately 1.2%, while station-level performance remained nearly unchanged.
+
+Grid search did not find a configuration that improved on the original hyperparameters. We retained the original model configuration with the three additional special-day features.
+
+Most of the citywide improvement occurred in Q4, when the special days take place.
+
+Because the special-day features were initially motivated by 2025 error analysis, this validation improvement is exploratory rather than fully independent evidence. The 2026 test set was not used for model tuning or selection.
+
+Full grid-search results are saved in `results/tuning_cv.csv`.
 
 ### Prediction interface (`predict.py`)
 
@@ -124,7 +165,11 @@ from predict import predict_shift
 predictions = predict_shift(feature_rows)
 ```
 
-`feature_rows` is a DataFrame containing the required model inputs, including station identifiers. The function returns a DataFrame with `Station` and `predicted_calls`.
+`feature_rows` is a DataFrame containing the required raw model inputs, station identifiers, and `ShiftDate`.
+
+The prediction function uses `ShiftDate` to generate the three special-day features, ensuring that training and inference use consistent preprocessing. `ShiftDate` itself is not used directly as a model feature.
+
+The function returns a DataFrame with `Station` and `predicted_calls`.
 
 The interface has been tested with all 34 stations and successfully integrated with the Streamlit app for historical replay. Future forecasts require the app to load the corresponding rows from `data/forecast_features.csv`.
 
@@ -192,19 +237,19 @@ Adds history features built from the call data, each using only shifts at least 
 
 ### Step 12: Calendar features (`scripts/evaluate_calendar_features.py`)
 
-| Version                                   | Station MAE | Citywide MAE | Folds better |
-| ----------------------------------------- | ----------- | ------------ | ------------ |
-| Current GBM                               | 2.409       | 18.95        | –            |
-| + special days                            | 2.406       | 18.73        | see below    |
-| + special days + month start (days 1–3)   | 2.407       | 18.83        | 1 of 4       |
-| + special days + UW quarter in session    | 2.410       | 18.94        | 1 of 4       |
-| + special days + long weekend             | 2.411       | 19.11        | 1 of 4       |
-| + special days + day length               | 2.410       | 19.03        | 1 of 4       |
-| + special days + Seattle Public Schools break | 2.404   | 18.78        | 2 of 4       |
+| Version                                       | Station MAE | Citywide MAE | Folds better |
+| --------------------------------------------- | ----------- | ------------ | ------------ |
+| Current GBM                                   | 2.409       | 18.95        | –            |
+| + special days                                | 2.406       | 18.73        | see below    |
+| + special days + month start (days 1–3)       | 2.407       | 18.83        | 1 of 4       |
+| + special days + UW quarter in session        | 2.410       | 18.94        | 1 of 4       |
+| + special days + long weekend                 | 2.411       | 19.11        | 1 of 4       |
+| + special days + day length                   | 2.410       | 19.03        | 1 of 4       |
+| + special days + Seattle Public Schools break | 2.404       | 18.78        | 2 of 4       |
 
 "Folds better" counts the folds where citywide MAE is lower than "+ special days".
 
-- **Special days** (`is_nye`, `is_day_after_thanksgiving`, `is_xmas` for Dec 24–26) are proposed for the final model; they are not in `modeling_dataset.csv` (the baseline), and `feature_sets.add_special_days` builds them. All of them fall in Q4, so the fold count says nothing about them: the Q1–Q3 changes are noise. On the 5 special-day shifts of 2025, citywide MAE drops from 44.0 to 26.3 and every one of them improves; the other shifts are unchanged (18.60 → 18.63). Over 2004–2025, calls were higher on New Year's Eve in 22 of 22 years and lower on the day after Thanksgiving in 20 of 22; the existing holiday flags miss both.
+- **Special days** (`is_nye`, `is_day_after_thanksgiving`, `is_xmas` for Dec 24–26) were selected for the final model; they are not in `modeling_dataset.csv` (the baseline), and `feature_sets.add_special_days` builds them. All of them fall in Q4, so the fold count says nothing about them: the Q1–Q3 changes are noise. On the 5 special-day shifts of 2025, citywide MAE drops from 44.0 to 26.3 and every one of them improves; the other shifts are unchanged (18.60 → 18.63). Over 2004–2025, calls were higher on New Year's Eve in 22 of 22 years and lower on the day after Thanksgiving in 20 of 22; the existing holiday flags miss both.
 - **Nothing else** adds anything on top. Month and weekday already cover day length and long weekends. The UW calendar does not help even at SFD 17 and SFD 22 next to campus. On school-break weekdays, citywide calls are about the same as on school days (293.6 vs 296.8 per shift, Feb and Apr 2022–2024).
 - UW quarter dates come from the UW academic calendars. SPS breaks follow fixed rules in the district calendars: mid-winter break is the week of Presidents Day, spring break the week starting the 2nd Monday of April.
 
@@ -239,9 +284,13 @@ The app only needs the CSVs already in `data/`, not the raw 911 export. Pick a s
 
 "Historical reference" uses each station's average for the same weekday in earlier shifts.
 
-"Trained model" uses the saved Poisson GBM through `predict.py`. The model is loaded from `models/poisson_gbm.joblib`, with its configuration and training cutoff defined in `model_metadata.json`.
+"Trained model" uses the saved 52-feature Poisson GBM through `predict.py`. The model is loaded from `models/poisson_gbm.joblib`, with its configuration and training cutoff defined in `model_metadata.json`.
 
-The trained model has been integrated and tested with the Streamlit app. The current app supports historical replay for eligible dates after the model's training cutoff. Future forecasting and weather inputs are not yet integrated.
+The app passes the selected shift date to the prediction function so that special-day indicators can be generated automatically.
+
+The trained model supports out-of-sample predictions starting January 3, 2026, respecting the three-shift lead time. Earlier dates use Historical Reference mode.
+
+The trained model is integrated with the Streamlit app, and all 24 automated tests pass. Future forecasting through the app and weather inputs are not yet integrated.
 
 The hourly breakdown requires `data/hourly_profile.csv`.
 
