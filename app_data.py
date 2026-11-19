@@ -3,6 +3,7 @@
 import importlib.util
 import json
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -273,6 +274,21 @@ def validate_predictions(result, station_ids):
     return result
 
 
+def _load_predict_module(path):
+    """Load predict.py once; it keeps the model in memory, so a fresh copy per click would reload it."""
+    info = path.stat()
+    return _predict_module(path, info.st_mtime_ns, info.st_size)
+
+
+@lru_cache(maxsize=4)
+def _predict_module(path, mtime_ns, size):
+    # mtime_ns and size are only cache keys: editing predict.py loads a fresh copy.
+    spec = importlib.util.spec_from_file_location("callcast_predict", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def learned_predictions(features, target, station_ids, root=ROOT):
     """Send loaded modeling_dataset.csv inputs to predict.py and check the returned counts."""
     # predict.py runs the saved model; the JSON describes its inputs and training cutoff.
@@ -329,6 +345,11 @@ def learned_predictions(features, target, station_ids, root=ROOT):
         raise ValueError("Model input column names must be unique.")
     # Select one modeling_dataset.csv input row per station for the requested target date.
     rows = features.loc[features["ShiftDate"] == target].copy()
+    if rows.empty:
+        # Shifts with a gap in the call data were dropped from modeling_dataset.csv.
+        raise ValueError(
+            "No estimate for this date: the call data for this shift has a gap."
+        )
     if rows["Station"].duplicated().any() or set(rows["Station"]) != set(station_ids):
         raise ValueError(
             "modeling_dataset.csv needs one row per station for this shift."
@@ -338,11 +359,9 @@ def learned_predictions(features, target, station_ids, root=ROOT):
         raise ValueError(
             "Some model inputs are blank for this shift, and the model isn't set up for blanks."
         )
-    spec = importlib.util.spec_from_file_location("callcast_predict", paths[0])
-    module = importlib.util.module_from_spec(spec)
     # predict.py is the model team's code and can fail in any way, so show its error on screen.
     try:
-        spec.loader.exec_module(module)
+        module = _load_predict_module(paths[0])
         output = module.predict_shift(rows[columns].copy())
     except (
         ImportError,

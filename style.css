@@ -62,6 +62,11 @@ label:has(input[type="radio"]),
   background-color: #F6E3E3 !important;
 }
 
+/* Calendar days: the picker opens on the dark sidebar, so days you can pick need light text */
+[data-testid="stDateInputCalendar"] td [role="button"]:not([aria-disabled="true"]) {
+  color: #F2EEE8;
+}
+
 /* Radio options in the sidebar */
 label:has(input[type="radio"]) {
   transition: color 0.15s ease;

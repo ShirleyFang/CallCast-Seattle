@@ -6,7 +6,9 @@ Run: uv run python -m unittest discover -s tests -v
 
 import functools
 import json
+import re
 import tempfile
+import tomllib
 import unittest
 from datetime import date
 from pathlib import Path
@@ -14,6 +16,7 @@ from unittest import mock
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 from streamlit.testing.v1 import AppTest
 
 from app_data import (
@@ -221,6 +224,24 @@ class ModelConnectionTests(AppTestCase):
         self.assertEqual(result.predicted_calls.sum(), 34 * 2.5)
         self.assertEqual(name, "fake model")
 
+    def test_predict_py_is_loaded_once_and_reloaded_when_edited(self):
+        # predict.py keeps the model in memory, so a fresh copy per click would reload it.
+        log = self.root / "loads.txt"
+        code = (
+            f"with open({str(log)!r}, 'a') as f:\n"
+            "    f.write('x')\n"
+            "def predict_shift(features):\n"
+            "    return features[['Station']].assign(predicted_calls=1.0)\n"
+        )
+        self.save(code)
+        self.predict()
+        self.predict()
+        self.assertEqual(log.read_text(), "x")
+        # Editing the file (a different size) loads a fresh copy.
+        self.save(code + "# edited\n")
+        self.predict()
+        self.assertEqual(log.read_text(), "xx")
+
     def test_rejects_model_trained_too_late(self):
         # Target Jan 1 is planned Dec 30, so training can only go up to Dec 29.
         self.save(
@@ -282,9 +303,26 @@ class ForecastTests(AppTestCase):
             self.assertEqual(round(result.predicted_calls.sum(), 1), total)
 
     def test_usual_number_comes_from_the_counts(self):
-        # October 31 is a Saturday; its usual number averages earlier Saturdays from the counts.
+        # October 31 is a Saturday: the average of the 248 earlier Saturdays per station.
         usual = reference_predictions(self.counts, "2026-10-31", self.ids)
+        values = usual.set_index("Station").predicted_calls
         self.assertEqual(len(usual), 34)
+        self.assertAlmostEqual(values["SFD 10"], 9656 / 248)  # 38.9
+        self.assertAlmostEqual(values["SFD 2"], 8071 / 248)  # 32.5
+        self.assertAlmostEqual(values.sum(), 306.3992, places=4)  # citywide
+
+    def test_dates_without_model_inputs_get_a_plain_message(self):
+        # 13 shifts have a gap in the call data and no row in modeling_dataset.csv.
+        have = set(self.features.ShiftDate.dt.date)
+        days = pd.date_range("2026-01-03", "2026-10-28").date
+        gaps = [day for day in days if day not in have]
+        self.assertEqual(len(gaps), 13)
+        self.assertIn(date(2026, 1, 9), gaps)
+        for day in gaps:
+            with self.assertRaisesRegex(
+                ValueError, "call data for this shift has a gap"
+            ):
+                learned_predictions(self.features, day.isoformat(), self.ids)
 
 
 # Likely range: how far real calls usually land from an estimate (data/prediction_ranges.csv).
@@ -415,6 +453,9 @@ class ScreenTests(unittest.TestCase):
         # Default view: Oct 24, SFD 10, the model's numbers.
         self.assertEqual(app.metric[0].value, "313.6")
         self.assertEqual(app.metric[1].value, "39.3")
+        # Both cards compare with the usual number: 313.6 - 306.4 = +7.1 (unrounded sums).
+        self.assertEqual(app.metric[0].delta, "+7.1 vs usual")
+        self.assertEqual(app.metric[1].delta, "+0.3 vs usual")
         table = app.dataframe[0].value
         self.assertAlmostEqual(table["Expected calls"].sum(), 313.6, delta=0.05)
         self.assertEqual(
@@ -436,9 +477,35 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual(app.metric[0].value, "313.6")
         self.assertEqual(app.metric[1].value, "32.1")
 
+    def test_calendar_days_are_readable_on_the_dark_sidebar(self):
+        # The picker opens on the sidebar's secondary color, so the days you can pick
+        # need light text; the default text color gave a contrast of 1.26 to 1.
+        theme = tomllib.loads((ROOT / ".streamlit/config.toml").read_text())
+        background = theme["theme"]["sidebar"]["secondaryBackgroundColor"]
+        css = (ROOT / "style.css").read_text()
+        rule = re.search(
+            r'\[data-testid="stDateInputCalendar"\][^{]*:not\(\[aria-disabled="true"\]\)'
+            r"\s*\{\s*color:\s*(#[0-9A-Fa-f]{6});",
+            css,
+        )
+        self.assertIsNotNone(rule, "style.css lost the calendar day rule")
+
+        def luminance(color):
+            channels = [int(color[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+            r, g, b = [
+                c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+                for c in channels
+            ]
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+        light, dark = sorted([luminance(rule.group(1)), luminance(background)])[::-1]
+        self.assertGreaterEqual((light + 0.05) / (dark + 0.05), 4.5)
+
     def test_screen_shows_no_technical_details(self):
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
-        text = " ".join(x.value for x in [*app.caption, *app.markdown, *app.info])
+        text = " ".join(
+            x.value for x in [*app.caption, *app.markdown, *app.info, *app.warning]
+        )
         for word in ["Poisson", "GBM", "first pass", "Trained model", "reference mode"]:
             self.assertNotIn(word, text)
         self.assertEqual(len(app.code), 0)
@@ -446,6 +513,38 @@ class ScreenTests(unittest.TestCase):
         self.assertIn("sfdlive.com", text)
         self.assertIn("seattlebreaking.com", text)
         self.assertNotIn("github.com", text)
+
+    def test_a_date_with_a_data_gap_shows_a_plain_message(self):
+        # Jan 9 has a gap in the call data: no numbers, no file names on the screen.
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        app.sidebar.date_input[0].set_value(date(2026, 1, 9)).run(timeout=60)
+        self.assertFalse(app.exception, [e.message for e in app.exception])
+        self.assertEqual(
+            [w.value for w in app.warning],
+            ["No estimate for this date: the call data for this shift has a gap."],
+        )
+        self.assertEqual(len(app.metric), 0)
+        shown = " ".join(x.value for x in [*app.warning, *app.info, *app.caption])
+        self.assertNotIn(".csv", shown)
+
+    def test_explore_charts_use_plain_names_in_order(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        self.assertFalse(app.exception, [e.message for e in app.exception])
+        # Bar charts on screen, in order: hourly (Prediction), weekday, station, category.
+        tables = []
+        for chart in app.get("vega_lite_chart"):
+            data = (chart.proto.datasets or [chart.proto])[0].data.data
+            tables.append(pa.ipc.open_stream(data).read_all().to_pandas())
+        self.assertEqual(len(tables), 4)
+        weekday, by_station, category = tables[1:]
+        self.assertEqual(weekday.iloc[:, 0].tolist()[:2], ["Mon", "Tue"])
+        # Stations run in number order: SFD 2 comes before SFD 18.
+        shown = by_station["Station"].tolist()
+        self.assertEqual(len(shown), 34)
+        self.assertEqual(shown, sorted(shown, key=lambda s: int(s.split()[-1])))
+        self.assertEqual(
+            category.iloc[:, 0].tolist(), ["Fire", "Medical", "Non-emergency", "Other"]
+        )
 
     def test_likely_range_is_shown_for_city_station_and_table(self):
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)

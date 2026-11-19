@@ -31,6 +31,13 @@ COLUMN_NAMES = {
     "ShiftDate": "Shift date",
     "AsOf": "Planning time",
 }
+# Plain names for the four call categories in the Explore chart.
+CATEGORY_NAMES = {
+    "fire": "Fire",
+    "medical": "Medical",
+    "non_emergency": "Non-emergency",
+    "other": "Other",
+}
 # Column order for the table and the download.
 TABLE_COLUMNS = [
     "Station",
@@ -206,7 +213,12 @@ with prediction_tab:
         selected = view.set_index("Station").loc[station]
         # Show all stations added together and the selected station's individual estimate.
         left, right = st.columns(2)
-        left.metric("Citywide expected calls", f"{view['predicted_calls'].sum():.1f}")
+        left.metric(
+            "Citywide expected calls",
+            f"{view['predicted_calls'].sum():.1f}",
+            delta=f"{view['difference'].sum():+.1f} vs usual",
+            delta_color="off",
+        )
         right.metric(
             f"{station} expected calls",
             f"{selected['predicted_calls']:.1f}",
@@ -263,7 +275,7 @@ with prediction_tab:
         st.download_button(
             "Download displayed counts",
             download.to_csv(index=False),
-            "callcast_counts.csv",
+            f"callcast_counts_{target_date}.csv",
             "text/csv",
             type="primary",
         )
@@ -329,9 +341,13 @@ with explore_tab:
         zoom_safe_line_chart(b, monthly, "%b %Y")
         # Compare every station, then show the selected station's past call category mix.
         st.write("Average calls per shift by station")
-        st.bar_chart(history.groupby("Station")["calls"].mean())
+        # reindex puts the stations in number order; the default sorts SFD 2 after SFD 18.
+        by_station = history.groupby("Station")["calls"].mean().reindex(station_ids)
+        st.bar_chart(by_station, sort=False)
         st.write(f"{station}: average calls by category")
-        st.bar_chart(part[GROUPS].mean())
+        # Show plain names instead of column names such as non_emergency.
+        mix = part[GROUPS].mean().rename(CATEGORY_NAMES)
+        st.bar_chart(mix, sort=False)
 
 with about_tab:
     # Text only: sources and links, what the numbers mean, what is left out, and what they don't show.

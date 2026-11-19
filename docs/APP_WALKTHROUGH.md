@@ -38,6 +38,8 @@ When the app starts, `load_tables()` checks the CSVs: required columns, no dupli
 
 The default target is Saturday October 24, 2026, which means the shift from 08:00 Saturday to 08:00 Sunday.
 
+Thirteen dates in the picker have no forecast: January 9, March 20, April 23, May 7, June 13, July 17, 19, 20, 22, 24 and 25, August 20 and September 17. The call data has a gap on those shifts, so `modeling_dataset.csv` has no row for them. The app shows "No estimate for this date: the call data for this shift has a gap." instead of numbers.
+
 `forecast_origin()` sets the planning time to two days earlier at 08:00:
 
 | What | When |
@@ -79,7 +81,7 @@ The app shows 38.9 as SFD 10's usual number next to the model's 39.3. A decimal 
 
 Switching to SFD 2 changes the station number from 39.3 to 32.1, but the citywide total stays at 313.6. That's because the app always calculates all 34 stations, and the citywide number is their sum. The station menu only picks which one to show on the right.
 
-"+0.3 vs usual" for SFD 10 and "-0.4 vs usual" for SFD 2 are the model's estimate minus the station's usual number from section 4.
+"+0.3 vs usual" for SFD 10 and "-0.4 vs usual" for SFD 2 are the model's estimate minus the station's usual number from section 4. The citywide card does the same with the sums: 313.6 minus 306.4 is "+7.1 vs usual" (the cards round each number, so the unrounded sums give 7.1).
 
 ## 6. Map, table and download
 
@@ -94,7 +96,7 @@ The table lists all 34 stations from most to fewest expected calls:
 * "Usual for this weekday": the same weekday average.
 * "Difference": expected minus usual.
 
-**Download displayed counts** saves this table as `callcast_counts.csv`, rounded to one decimal like the screen, with the shift date and planning time added.
+**Download displayed counts** saves this table as `callcast_counts_<date>.csv` (for example `callcast_counts_2026-10-24.csv`), rounded to one decimal like the screen, with the shift date and planning time added.
 
 ## 7. Hourly breakdown and history line
 
@@ -112,7 +114,7 @@ These charts use the same `history` as the Prediction tab. The weekday chart sho
 
 ![Station comparison and categories](walkthrough_images/07_station_categories.jpg)
 
-Further down, the station chart compares every station, so it stays the same when you pick a different one. The category chart splits the selected station's calls into fire, medical, nonemergency and other.
+Further down, the station chart compares every station, so it stays the same when you pick a different one. The category chart splits the selected station's calls into fire, medical, non-emergency and other.
 
 The categories add up to `calls`, so they're fine for looking at past shifts but can't be model inputs.
 
