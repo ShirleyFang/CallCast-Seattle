@@ -1,6 +1,6 @@
 # CallCast Seattle app walkthrough
 
-This goes through the app screen by screen and shows which CSV and which function each number comes from. Right now the app runs in "Historical reference" mode. "Trained model" mode works once the model is saved.
+This goes through the app screen by screen and shows which CSV and which function each number comes from. The app has two modes: "Historical reference" (each station's usual average) and "Trained model" (Elisa's saved Poisson GBM).
 
 ## 1. Start the app
 
@@ -76,27 +76,27 @@ The app shows 38.9 for SFD 10. A decimal is fine, since it's an expected count.
 
 Switching to SFD 2 changes the station number from 38.9 to 32.5, but the citywide total stays at 306.4. That's because the app always calculates all 34 stations, and the citywide number is their sum. The station menu only picks which one to show on the right.
 
-"+0.0 vs usual" shows up because, in this mode, the estimate and the "usual" number are the same average. Once the trained model is connected, the two will differ.
+"+0.0 vs usual" shows up because, in this mode, the estimate and the "usual" number are the same average. In "Trained model" mode they differ (section 9).
 
 ## 6. Map, table and download
 
-The map joins station coordinates from `sfd_stations.csv` to the estimates. Each dot is a fire station, and bigger dots mean more expected calls.
+The map joins station coordinates from `sfd_stations.csv` to the estimates. Each dot is a fire station, and bigger dots mean more expected calls. Under the map are links to SFD Live (live incidents) and the Seattle Breaking guide (station coverage).
 
 ![Ranked table and download](walkthrough_images/03_table_download.jpg)
 
 The table lists all 34 stations from most to fewest expected calls:
 
-* `predicted_calls`: the estimate.
-* `usual_calls`: the same weekday average.
-* `difference`: predicted minus usual.
+* "Expected calls": the estimate.
+* "Usual for this weekday": the same weekday average.
+* "Difference": expected minus usual.
 
-**Download displayed counts** saves this table as `callcast_counts.csv`, with the shift date, planning time and source added.
+**Download displayed counts** saves this table as `callcast_counts.csv`, with the shift date and planning time added.
 
 ## 7. Hourly breakdown and history line
 
 ![Hourly breakdown and history](walkthrough_images/04_hourly_history.jpg)
 
-The count table only has totals per shift, so the hourly breakdown needs a separate file, `data/hourly_profile.csv`. It should have one row per station and hour (0 = 08:00), with shares that add up to 1. Until that file exists, the app says it isn't available yet.
+The count table only has totals per shift, so the hourly breakdown needs a separate file, `data/hourly_profile.csv`. Xiaoxue built it from 2022 to 2024: one row per station and hour (0 = 08:00), with shares that add up to 1. The app multiplies the shift total by each share. It skips the two daylight saving shifts a year, since those are 23 or 25 hours long.
 
 The line chart shows the station's last 90 days of known history. A gap means an outage shift; a 0 means a real zero call shift. The line stops on October 21, the last finished shift.
 
@@ -114,15 +114,15 @@ The categories add up to `calls`, so they're fine for looking at past shifts but
 
 ## 9. Trained model mode
 
-![Trained model not connected yet](walkthrough_images/05_missing_model.jpg)
+![Trained model mode](walkthrough_images/05_trained_model.jpg)
 
-Choosing **Trained model** shows "Trained model not connected yet" until `predict.py` and `model_metadata.json` are in the project folder. When they are, `learned_predictions()` will:
+Choosing **Trained model** switches the numbers to Elisa's Poisson GBM. The caption says "Model: Poisson GBM (first pass)". For October 24, SFD 10 gets 39.3 calls (+0.3 vs usual) and the city gets 313.6. Behind the scenes, `learned_predictions()`:
 
-1. Read the model name, its last training date and its input columns from `model_metadata.json`.
-2. Refuse a model that was trained on shifts after the planning time.
-3. Take the 34 rows for the target date from `modeling_dataset.csv`.
-4. Pass only the model's input columns, never `calls` or the category counts.
-5. Call `predict_shift()` from `predict.py` and check that the result has one valid number per station.
+1. Reads the model name, its last training date (2025-12-31) and its input columns from `model_metadata.json`.
+2. Refuses a model that was trained on shifts after the planning time. That's why the date picker starts at January 3, 2026, the first date the model can serve.
+3. Takes the 34 rows for the target date from `modeling_dataset.csv`.
+4. Passes only the model's input columns, never `calls` or the category counts.
+5. Calls `predict_shift()` from `predict.py` and checks that the result has one valid number per station.
 
 For example, SFD 2 on October 24 has `lag3` = 33 (its Wednesday count), `lag7` = 30, `avg7` = 32, `avg28` = 29.75 and `same_weekday_avg4` = 31.75.
 
@@ -136,9 +136,10 @@ This tab is just text:
 * Some call types are excluded.
 * Counts don't show call length, available units or travel time.
 * The data stops at a fixed snapshot.
+* Links to SFD Live and the Seattle Breaking coverage guide.
 
 ## Try it yourself
 
 1. Switch from SFD 10 to SFD 2. Why does the station number change but the citywide total doesn't?
 2. Pick another date. What's the planning time, and what's the last shift the app can use?
-3. Choose Trained model. Why do the numbers disappear while the map and history stay?
+3. Open the date picker and go back as far as it allows. Why does it stop at January 2026?

@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -17,6 +18,7 @@ from streamlit.testing.v1 import AppTest
 
 from app_data import (
     ROOT,
+    first_model_date,
     forecast_origin,
     hourly_allocation,
     known_history,
@@ -104,8 +106,41 @@ class PlanningTimeTests(AppTestCase):
         with self.assertRaises(ValueError):
             target_dates(year.iloc[:10])
 
+    def test_picker_starts_when_the_model_can_serve(self):
+        # The model is trained through 2025-12-31, so it can serve from January 3, 2026.
+        self.assertEqual(first_model_date(), date(2026, 1, 3))
+        self.assertEqual(
+            target_dates(self.counts, first_model_date()),
+            (date(2026, 1, 3), date(2026, 10, 28), date(2026, 10, 24)),
+        )
+        # Without readable model metadata there is no limit.
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertIsNone(first_model_date(Path(folder)))
 
-# Historical reference: the numbers the app shows right now.
+    def test_picker_ends_at_the_last_forecast_date(self):
+        # Forecast shifts after October 28 can be picked; October 28 stays the last day of counts.
+        last_forecast = self.features.ShiftDate.max().date()
+        self.assertEqual(last_forecast, date(2026, 10, 31))
+        self.assertEqual(
+            target_dates(self.counts, first_model_date(), last_forecast),
+            (date(2026, 1, 3), date(2026, 10, 31), date(2026, 10, 24)),
+        )
+        self.assertEqual(self.counts.ShiftDate.max().date(), date(2026, 10, 28))
+
+    def test_forecast_planning_times(self):
+        # October 29, 30 and 31 are planned on October 27, 28 and 29 at 08:00, and the
+        # latest finished shifts are October 26, 27 and 28.
+        for target, planned, latest in [
+            ("2026-10-29", "2026-10-27", "2026-10-26"),
+            ("2026-10-30", "2026-10-28", "2026-10-27"),
+            ("2026-10-31", "2026-10-29", "2026-10-28"),
+        ]:
+            self.assertEqual(str(forecast_origin(target))[:16], planned + " 08:00")
+            history = known_history(self.counts, target)
+            self.assertEqual(history.ShiftDate.max(), pd.Timestamp(latest))
+
+
+# Usual weekday average: the "Usual for this weekday" numbers shown next to each estimate.
 
 
 class HistoricalReferenceTests(AppTestCase):
@@ -214,6 +249,41 @@ class ModelConnectionTests(AppTestCase):
             self.predict()
 
 
+# Forecast shifts: the three shifts after the last day of counts.
+
+
+class ForecastTests(AppTestCase):
+    def test_forecast_rows_are_added_without_calls(self):
+        last_count = self.counts.ShiftDate.max()
+        forecast = self.features[self.features.ShiftDate > last_count]
+        self.assertEqual(len(forecast), 34 * 3)
+        self.assertEqual(
+            sorted(forecast.ShiftDate.dt.date.unique()),
+            [date(2026, 10, 29), date(2026, 10, 30), date(2026, 10, 31)],
+        )
+        self.assertTrue(forecast.calls.isna().all())
+        self.assertEqual(set(forecast.Station), set(self.ids))
+        # Every shift up to the last count day still has its real calls.
+        self.assertTrue(
+            self.features[self.features.ShiftDate <= last_count].calls.notna().all()
+        )
+
+    def test_model_gives_34_stations_and_the_expected_totals(self):
+        for target, total in [
+            ("2026-10-29", 317.7),
+            ("2026-10-30", 327.7),
+            ("2026-10-31", 311.2),
+        ]:
+            result, _ = learned_predictions(self.features, target, self.ids)
+            self.assertEqual(len(result), 34)
+            self.assertEqual(round(result.predicted_calls.sum(), 1), total)
+
+    def test_usual_number_comes_from_the_counts(self):
+        # October 31 is a Saturday; its usual number averages earlier Saturdays from the counts.
+        usual = reference_predictions(self.counts, "2026-10-31", self.ids)
+        self.assertEqual(len(usual), 34)
+
+
 # Hourly breakdown: splitting one shift total into 24 hours.
 
 
@@ -241,31 +311,86 @@ class HourlyBreakdownTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, f"{length} hour"):
                 hourly_allocation(self.root, target, "SFD 10", 30)
 
+    def test_october_31_is_a_25_hour_shift(self):
+        # The clocks go back on November 1, so the October 31 forecast shift is 25 hours long.
+        write_profile(self.root)
+        with self.assertRaisesRegex(ValueError, "25 hours long"):
+            hourly_allocation(self.root, "2026-10-31", "SFD 10", 30)
+
 
 # Screen: runs app.py like a browser would and reads what it shows.
 
 
 class ScreenTests(unittest.TestCase):
-    def test_default_screen_station_switch_and_model_mode(self):
+    def test_default_screen_and_station_switch(self):
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
         self.assertFalse(app.exception, [e.message for e in app.exception])
         self.assertEqual(len(app.sidebar.selectbox[0].options), 34)
-        # Default view: Oct 24, SFD 10, historical reference.
-        self.assertEqual(app.metric[0].value, "306.4")
-        self.assertEqual(app.metric[1].value, "38.9")
-        self.assertAlmostEqual(
-            app.dataframe[0].value.predicted_calls.sum(), 306.4332, places=4
+        # No prediction source switch: the app always shows the trained model.
+        self.assertEqual(len(app.sidebar.radio), 0)
+        # Default view: Oct 24, SFD 10, the model's numbers.
+        self.assertEqual(app.metric[0].value, "313.6")
+        self.assertEqual(app.metric[1].value, "39.3")
+        table = app.dataframe[0].value
+        self.assertAlmostEqual(table["Expected calls"].sum(), 313.6, delta=0.05)
+        self.assertEqual(
+            list(table.columns),
+            ["Station", "Expected calls", "Usual for this weekday", "Difference"],
         )
         # Switching station changes the station number, not the citywide total.
         app.sidebar.selectbox[0].select("SFD 2").run()
-        self.assertEqual(app.metric[0].value, "306.4")
-        self.assertEqual(app.metric[1].value, "32.5")
-        # No predict.py in the repo yet, so model mode shows a warning and no numbers.
-        # Update this part once the trained model is added.
-        app.sidebar.radio[0].set_value("Trained model").run()
         self.assertFalse(app.exception)
-        self.assertTrue(any("not connected yet" in x.value for x in app.warning))
-        self.assertEqual(len(app.metric), 0)
+        self.assertEqual(app.metric[0].value, "313.6")
+        self.assertEqual(app.metric[1].value, "32.1")
+
+    def test_screen_shows_no_technical_details(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        text = " ".join(x.value for x in [*app.caption, *app.markdown, *app.info])
+        for word in ["Poisson", "GBM", "first pass", "Trained model", "reference mode"]:
+            self.assertNotIn(word, text)
+        self.assertEqual(len(app.code), 0)
+        # The two planner links are there, and the repository link is not.
+        self.assertIn("sfdlive.com", text)
+        self.assertIn("seattlebreaking.com", text)
+        self.assertNotIn("github.com", text)
+
+    def test_model_error_is_looked_up_and_shown_once(self):
+        # A model failure should give one warning, and the page should ask the model once.
+        with mock.patch(
+            "app_data.learned_predictions", side_effect=ValueError("model broke")
+        ) as lookup:
+            app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        self.assertEqual(lookup.call_count, 1)
+        self.assertEqual([w.value for w in app.warning], ["model broke"])
+
+    def test_date_picker_range_on_screen(self):
+        # The picker starts where the model can serve and ends at the last forecast date.
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        picker = app.sidebar.date_input[0]
+        self.assertEqual(
+            (picker.min, picker.max), (date(2026, 1, 3), date(2026, 10, 31))
+        )
+
+    def test_forecast_dates_are_labelled_and_checked_on_screen(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+        for day, total in [
+            (date(2026, 10, 29), "317.7"),
+            (date(2026, 10, 30), "327.7"),
+            (date(2026, 10, 31), "311.2"),
+        ]:
+            app.sidebar.date_input[0].set_value(day).run(timeout=60)
+            self.assertFalse(app.exception, str(day))
+            self.assertEqual(app.metric[0].value, total)
+            self.assertEqual(len(app.dataframe[0].value), 34)
+            self.assertIn("Forecast", app.subheader[0].value)
+            self.assertTrue(any("Forecast:" in c.value for c in app.caption))
+        # October 31 is 25 hours long, so the hourly view says so instead of drawing.
+        notes = " ".join(x.value for e in app.expander for x in e.info)
+        self.assertIn("25 hours long", notes)
+        # The last day with real counts is not labelled as a forecast.
+        app.sidebar.date_input[0].set_value(date(2026, 10, 28)).run(timeout=60)
+        self.assertNotIn("Forecast", app.subheader[0].value)
+        self.assertFalse(any("Forecast:" in c.value for c in app.caption))
 
 
 if __name__ == "__main__":

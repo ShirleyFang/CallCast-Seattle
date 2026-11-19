@@ -126,7 +126,7 @@ predictions = predict_shift(feature_rows)
 
 `feature_rows` is a DataFrame containing the required model inputs, including station identifiers. The function returns a DataFrame with `Station` and `predicted_calls`.
 
-The interface has been tested with all 34 stations and successfully integrated with the Streamlit app for historical replay. Future forecasts require the app to load the corresponding rows from `data/forecast_features.csv`.
+The interface has been tested with all 34 stations and successfully integrated with the Streamlit app, including the 3 forecast shifts from `data/forecast_features.csv`.
 
 ### Step 8: Weather features (`scripts/step8_weather.py`)
 
@@ -241,7 +241,7 @@ The app only needs the CSVs already in `data/`, not the raw 911 export. Pick a s
 
 "Trained model" uses the saved Poisson GBM through `predict.py`. The model is loaded from `models/poisson_gbm.joblib`, with its configuration and training cutoff defined in `model_metadata.json`.
 
-The trained model has been integrated and tested with the Streamlit app. The current app supports historical replay for eligible dates after the model's training cutoff. Future forecasting and weather inputs are not yet integrated.
+The trained model has been integrated and tested with the Streamlit app. The app shows every date from the model's first usable date (January 3, 2026) to the last day of counts, then the 3 forecast shifts after it (October 29 to 31), labelled Forecast. Weather inputs are not used.
 
 The hourly breakdown requires `data/hourly_profile.csv`.
 

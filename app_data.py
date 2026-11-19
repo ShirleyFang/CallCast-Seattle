@@ -15,7 +15,7 @@ GROUPS = ["fire", "medical", "non_emergency", "other"]
 
 
 def load_tables(root=ROOT):
-    """Read station locations, past call totals, and model input rows from three CSVs."""
+    """Read station locations, past call totals, and model input rows (past and forecast) from four CSVs."""
     # sfd_stations.csv: names and coordinates for the station menu and map.
     stations = pd.read_csv(root / "data/sfd_stations.csv")
     # station_shift_counts.csv: past totals, categories, and suspected outage flags.
@@ -129,14 +129,74 @@ def load_tables(root=ROOT):
         raise ValueError(
             "Modeling rows/targets do not match the count table rows without an outage."
         )
+    # The shifts after the last count date have model inputs but no calls yet.
+    forecast = read_forecast_features(
+        root, set(stations["station"]), counts["ShiftDate"].max(), features.columns
+    )
+    if forecast is not None:
+        features = pd.concat([features, forecast], ignore_index=True)
     return stations, counts.sort_values(["Station", "ShiftDate"]), features
 
 
-def target_dates(counts):
-    """Use the loaded count table to choose the date picker's range and starting date."""
+def read_forecast_features(root, station_ids, last_count, columns):
+    """Read forecast_features.csv, check it, and return its rows (None if the file is absent)."""
+    path = root / "data/forecast_features.csv"
+    if not path.exists():
+        return None
+    forecast = pd.read_csv(path, parse_dates=["ShiftDate"])
+    if forecast.empty or set(columns) - set(forecast.columns):
+        raise ValueError("forecast_features.csv is empty or missing columns.")
+    # These shifts have not happened, so they cannot have a call count.
+    if forecast["calls"].notna().any():
+        raise ValueError(
+            "forecast_features.csv must have blank calls: those shifts have not happened yet."
+        )
+    if forecast["Station"].isna().any() or set(forecast["Station"]) != station_ids:
+        raise ValueError(
+            "forecast_features.csv stations do not match the station list."
+        )
+    per_date = forecast.groupby("ShiftDate")["Station"].nunique()
+    if (
+        forecast.duplicated(["Station", "ShiftDate"]).any()
+        or (per_date != len(station_ids)).any()
+    ):
+        raise ValueError(
+            "forecast_features.csv needs exactly one row for every station on each forecast date."
+        )
+    # The first forecast date is the day after the last counts, with no gap after it.
+    expected = pd.date_range(last_count + pd.Timedelta(days=1), periods=len(per_date))
+    if not per_date.index.equals(expected):
+        raise ValueError(
+            "Forecast dates must follow the last day of counts, one day after another."
+        )
+    return forecast[list(columns)]
+
+
+def first_model_date(root=ROOT):
+    """First target date the trained model can serve, or None if its dates can't be read."""
+    # Same rule as learned_predictions: a target must be at least 3 days after the
+    # model's last training shift, so earlier dates would only replay its training data.
+    try:
+        metadata = json.loads((root / "model_metadata.json").read_text("utf-8"))
+        trained = pd.Timestamp(date.fromisoformat(metadata["trained_through"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return (trained + pd.Timedelta(days=3)).date()
+
+
+def target_dates(counts, earliest=None, latest=None):
+    """Use the loaded count table to choose the date picker's range and starting date.
+
+    earliest is the first date the model can serve; the picker starts there if it is later.
+    latest is the last forecast date; the picker ends there if it is later than the counts.
+    """
     # Leave an initial month of history before the first selectable target shift.
     first = counts["ShiftDate"].min().normalize() + pd.Timedelta(days=31)
+    if earliest is not None:
+        first = max(first, pd.Timestamp(earliest).normalize())
     last = counts["ShiftDate"].max().normalize()
+    if latest is not None:
+        last = max(last, pd.Timestamp(latest).normalize())
     if first > last:
         raise ValueError(
             "At least 32 calendar shifts are needed for this historical demo."
@@ -315,7 +375,7 @@ def hourly_allocation(root, target, station, total):
     hours = (end - start).total_seconds() / 3600
     if hours != 24:
         raise ValueError(
-            f"Hourly breakdown not available for this {hours:.0f} hour daylight saving shift."
+            f"The hourly breakdown is not available for this shift: the clocks change during it, so it is {hours:.0f} hours long."
         )
     # Each row gives one station, one shift hour, its share of calls, and its history cutoff.
     profile = pd.read_csv(path)
