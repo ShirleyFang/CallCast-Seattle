@@ -71,7 +71,8 @@ class CsvLoadingTests(DataTestCase):
         self.assertEqual(self.counts.ShiftDate.nunique(), 1762)
         self.assertEqual(len(self.counts), 59908)
         self.assertEqual(len(self.usable), 59092)
-        self.assertEqual(len(self.features), 59092)
+        # 59,092 shifts with counts, plus 102 rows (34 stations x 3 days) of forecast inputs.
+        self.assertEqual(len(self.features), 59092 + 102)
         self.assertEqual(self.counts.calls.sum(), 541319)
 
     def test_broken_csvs_are_rejected(self):
@@ -79,14 +80,19 @@ class CsvLoadingTests(DataTestCase):
         files = {
             "sfd_stations.csv": self.stations,
             "station_shift_counts.csv": self.counts,
-            "modeling_dataset.csv": self.features,
+            "modeling_dataset.csv": self.features[self.features.calls.notna()],
+            "forecast_features.csv": self.features[self.features.calls.isna()],
         }
+        files = {name: frame.reset_index(drop=True) for name, frame in files.items()}
         cases = [
             ("sfd_stations.csv", "lat", np.inf, "coordinates"),
             ("sfd_stations.csv", "lat", 999, "coordinates"),  # off the planet
             ("station_shift_counts.csv", "calls", -1, "whole numbers"),
             ("station_shift_counts.csv", "ShiftDate", "not a date", ""),
             ("modeling_dataset.csv", "calls", 999, "do not match"),
+            ("forecast_features.csv", "calls", 5, "blank calls"),  # not happened yet
+            ("forecast_features.csv", "Station", "SFD 99", "do not match"),
+            ("forecast_features.csv", "ShiftDate", "2027-01-01", "every station"),
         ]
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

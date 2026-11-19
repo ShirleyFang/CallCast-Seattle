@@ -15,7 +15,7 @@ uv run python scripts/train_model.py
 ```
 
 This generates `models/poisson_gbm.joblib` and `model_metadata.json`,
-which are required for the Streamlit app's "Trained model" mode.
+which the Streamlit app needs to show its forecasts.
 
 `scripts/fetch_concerts.py` needs a free [setlist.fm API key](https://www.setlist.fm/settings/api). Copy `.env.example` to `.env` and paste the key there. `.env` is in `.gitignore`, so the key is never committed.
 
@@ -35,6 +35,7 @@ The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is 
 | Step 6       | `scripts/evaluate_models.py`        | `data/modeling_dataset.csv` → rolling-CV scores of baselines and first-pass models (printed)              |
 | Step 7       | `scripts/train_model.py`            | `data/modeling_dataset.csv` → trained Poisson GBM (`models/poisson_gbm.joblib`) and `model_metadata.json` |
 | Prediction   | `predict.py`                        | saved model + feature rows → predicted calls per station                                                  |
+| Range        | `scripts/prediction_ranges.py`      | `data/modeling_dataset.csv` → `data/prediction_ranges.csv` (the app's likely range) and its coverage (printed) |
 | Step 8       | `scripts/step8_weather.py`          | `data/modeling_dataset.csv` + Open-Meteo → `data/modeling_dataset_weather.csv`                            |
 | Step 9       | `scripts/step9_weather_compare.py`  | `data/modeling_dataset_weather.csv` → rolling-CV scores with and without weather (printed)                |
 | Step 10      | `scripts/evaluate_by_station.py`    | `data/modeling_dataset.csv` → per-station model comparison and `data/station_errors.csv`                  |
@@ -126,7 +127,26 @@ predictions = predict_shift(feature_rows)
 
 `feature_rows` is a DataFrame containing the required model inputs, including station identifiers. The function returns a DataFrame with `Station` and `predicted_calls`.
 
-The interface has been tested with all 34 stations and successfully integrated with the Streamlit app for historical replay. Future forecasts require the app to load the corresponding rows from `data/forecast_features.csv`.
+The interface has been tested with all 34 stations and successfully integrated with the Streamlit app, including the 3 forecast shifts from `data/forecast_features.csv`.
+
+### Likely range (`scripts/prediction_ranges.py`)
+
+Measures how far the Poisson GBM's forecasts were from the real calls in 2025 and saves `data/prediction_ranges.csv`, which the app shows as the "likely range" next to each estimate. It uses the same four rolling folds as Step 6 and never trains or scores on 2026. The range is the 10th to 90th percentile of (actual − forecast), so about 4 in 5 shifts land inside it. Larger forecasts miss by more, so a station gets one pair per forecast size, and the citywide total has its own pair:
+
+| Forecast at a station | Low | High | Station shifts |
+| --------------------- | ---: | ---: | ---: |
+| up to 5               | −2.4 | +2.7 | 4,892 |
+| 5 to 10               | −3.5 | +3.7 | 3,822 |
+| 10 to 20              | −4.7 | +4.9 | 2,601 |
+| 20 to 40              | −7.3 | +8.3 | 919 |
+| over 40               | −9.1 | +10.0 | 176 |
+| citywide (365 shifts) | −30.0 | +32.5 | |
+
+Coverage on the shifts the ranges were made from: stations 79.8%, citywide 79.5%.
+
+Coverage out of sample (ranges from folds 1 to 3, counted on fold 4): stations 78.8% (every size band 76% to 80%), citywide 70.7%. The citywide range is a little narrow for the last quarter (92 shifts), so read the city's "about 4 in 5" as about 7 in 10.
+
+Limits: the ranges describe a forecast made 3 shifts ahead from the untuned model. Each 2025 fold forecasts 0 to 3 months after its training stops, but the app serves dates up to 10 months after the model's training ends. For October 2026 the citywide range probably holds less often than 7 in 10. Run the script again after retraining the model.
 
 ### Step 8: Weather features (`scripts/step8_weather.py`)
 
@@ -234,14 +254,13 @@ uv run streamlit run app.py
 The app only needs the CSVs already in `data/`, not the raw 911 export. Pick a shift date and a station to see:
 
 - expected calls for each station and the citywide total
+- a likely range next to each estimate (about 4 in 5 similar past shifts landed inside it)
 - a station map and a ranked table you can download as CSV
 - that station's past calls, weekday and monthly averages, and call types
 
-"Historical reference" uses each station's average for the same weekday in earlier shifts.
+The app has one forecast, from the saved Poisson GBM through `predict.py`. The model is loaded once from `models/poisson_gbm.joblib`, with its configuration and training cutoff defined in `model_metadata.json`. The "Usual for this weekday" column is each station's average for the same weekday in earlier shifts, shown next to the forecast for comparison.
 
-"Trained model" uses the saved Poisson GBM through `predict.py`. The model is loaded from `models/poisson_gbm.joblib`, with its configuration and training cutoff defined in `model_metadata.json`.
-
-The trained model has been integrated and tested with the Streamlit app. The current app supports historical replay for eligible dates after the model's training cutoff. Future forecasting and weather inputs are not yet integrated.
+The app shows every date from the model's first usable date (January 3, 2026) to the last day of counts, then the 3 forecast shifts after it (October 29 to 31), labelled Forecast. Weather inputs are not used.
 
 The hourly breakdown requires `data/hourly_profile.csv`.
 
