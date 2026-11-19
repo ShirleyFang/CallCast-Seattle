@@ -21,6 +21,7 @@ import requests
 from sklearn.ensemble import HistGradientBoostingRegressor
 
 from cv_utils import DATE_COL, STATION_COL, TARGET, build_features, iter_folds, load_dataset, metrics
+from feature_sets import BASELINE_NUMERIC
 
 
 # constant: model and data (same as step 9)
@@ -158,7 +159,9 @@ print(pd.concat([station_extra.head(5), station_extra.tail(5)]).to_string())
 # 4. (c) rolling CV
 print('\n=== (c) 2025 rolling CV ===')
 X_base, base_numeric = build_features(df, extra_exclude=EXCLUDE + SOURCE_COLS)
-assert not any(c.startswith(('era5_', 'fc_', 'wx_', 'flag_')) for c in base_numeric), base_numeric
+# the no-weather model must use exactly the shared baseline (plus station/weekday dummies)
+assert sorted(base_numeric) == sorted(BASELINE_NUMERIC), f'unexpected features {sorted(set(base_numeric) ^ set(BASELINE_NUMERIC))}'
+assert all(c in base_numeric or c.startswith(('st_', 'wd_')) for c in X_base.columns)
 
 
 def features(source):
@@ -167,7 +170,7 @@ def features(source):
         return X_base
     d = df.join(shift_flags[source], on=DATE_COL)
     X, numeric = build_features(d, extra_exclude=EXCLUDE + SOURCE_COLS)
-    assert sorted(numeric) == sorted(base_numeric + FLAGS), sorted(set(numeric) ^ set(base_numeric + FLAGS))
+    assert sorted(numeric) == sorted(BASELINE_NUMERIC + FLAGS), sorted(set(numeric) ^ set(BASELINE_NUMERIC + FLAGS))
     return X
 
 

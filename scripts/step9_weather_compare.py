@@ -19,6 +19,7 @@ import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
 
 from cv_utils import DATE_COL, TARGET, build_features, iter_folds, load_dataset, metrics
+from feature_sets import BASELINE_NUMERIC
 
 
 # constant: model and data (swap here if the shared setup changes)
@@ -34,7 +35,6 @@ MIN_CAL_SHIFTS = 60                # fewer shifts with both values: keep the raw
 WEATHER = ['precip_sum', 'precip_max_hr', 'snow_sum', 'temp_max', 'temp_min', 'gust_max']
 SMALL = ['precip_sum', 'snow_sum', 'temp_min']
 SOURCE_COLS = [f'{s}_{w}' for s in ('era5', 'fc') for w in WEATHER]
-BASE_NUMERIC = ['month', 'is_holiday', 'is_holiday_eve', 'lag3', 'lag7', 'avg7', 'avg28', 'same_weekday_avg4']
 
 # name: (training weather, validation weather, first training shift, weather features)
 VERSIONS = {
@@ -65,7 +65,7 @@ def features(wx, keep):
         d[f'wx_{w}'] = wx[w]
     # the raw era5_*/fc_* columns are always excluded; only the wx_* copies may enter
     X, numeric = build_features(d, extra_exclude=EXCLUDE + SOURCE_COLS)
-    expected = BASE_NUMERIC + [f'wx_{w}' for w in keep]
+    expected = BASELINE_NUMERIC + [f'wx_{w}' for w in keep]
     assert sorted(numeric) == sorted(expected), f'unexpected features {sorted(set(numeric) ^ set(expected))}'
     assert all(c in numeric or c.startswith(('st_', 'wd_')) for c in X.columns)
     return X
@@ -99,7 +99,7 @@ def X_for(source, keep):
 
 
 print(f"{len(df)} rows, {df[DATE_COL].min().date()} to {df[DATE_COL].max().date()}")
-print('numeric features without weather:', BASE_NUMERIC)
+print('numeric features without weather:', BASELINE_NUMERIC)
 print('weather features (all):', WEATHER, '| small set:', SMALL)
 
 # forecasts must be complete wherever C' and the validation folds use them (snowfall may be empty)
