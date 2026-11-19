@@ -12,8 +12,10 @@
 # 2026 is the test set and is dropped. Results are printed; only the 2003-2019 counts are saved.
 #
 # Run it from the repository root: uv run python scripts/step15_weather_extremes.py
+# Robustness check with the day-4 forecast (after step8_weather.py 4): uv run python scripts/step15_weather_extremes.py 4
 
 import os
+import sys
 
 import numpy as np
 import pandas as pd
@@ -26,9 +28,10 @@ from feature_sets import BASELINE_NUMERIC
 
 # constant: model and data (same as step 9)
 MODEL_PARAMS = {'loss': 'poisson', 'max_iter': 200, 'random_state': 0}
-DATA_PATH = 'data/modeling_dataset_weather.csv'
+FORECAST_DAY = int(sys.argv[1]) if len(sys.argv) > 1 else 3    # previous_dayN from step 8; 3 is the main run
+DATA_PATH = 'data/modeling_dataset_weather.csv' if FORECAST_DAY == 3 else f'data/modeling_dataset_weather_day{FORECAST_DAY}.csv'
 TEST_START = '2026-01-01'          # 2026 is never used
-FC_START = '2024-01-21'            # first complete shift with GFS forecasts
+FC_START = {3: '2024-01-21', 4: '2024-01-22'}[FORECAST_DAY]   # first complete shift with GFS forecasts
 FC_SNOW_START = '2024-12-09'       # first complete shift with GFS snowfall
 EXCLUDE = ['year']
 
@@ -203,9 +206,9 @@ MODEL_VERSIONS = {
     'F  flags, ERA5 train / forecast val': ('era5', 'fc', None, 1),
     **{f'W{w} flags + weight {w}': ('era5', 'fc', None, w) for w in WEIGHTS},
     "F' flags, forecast / forecast": ('fc', 'fc', FC_START, 1),
-    "A' no weather, from 2024-01-21": (None, None, FC_START, 1),
+    f"A' no weather, from {FC_START}": (None, None, FC_START, 1),
 }
-A, A_PRIME = 'A  no weather', "A' no weather, from 2024-01-21"
+A, A_PRIME = 'A  no weather', f"A' no weather, from {FC_START}"
 R_VERSIONS = {'R  A x r (r from forecast-flagged shifts)': shift_flags['fc']['flag_wind'],
               'R5 A x r (r from ERA5 strong-wind shifts)': shift_flags['era5']['flag_wind']}
 

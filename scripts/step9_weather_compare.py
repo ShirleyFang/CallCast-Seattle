@@ -13,6 +13,9 @@
 # Results are printed, not saved.
 #
 # Run it from the repository root: uv run python scripts/step9_weather_compare.py
+# Robustness check with the day-4 forecast (after step8_weather.py 4): uv run python scripts/step9_weather_compare.py 4
+
+import sys
 
 import numpy as np
 import pandas as pd
@@ -24,9 +27,10 @@ from feature_sets import BASELINE_NUMERIC
 
 # constant: model and data (swap here if the shared setup changes)
 MODEL_PARAMS = {'loss': 'poisson', 'max_iter': 200, 'random_state': 0}
-DATA_PATH = 'data/modeling_dataset_weather.csv'
+FORECAST_DAY = int(sys.argv[1]) if len(sys.argv) > 1 else 3    # previous_dayN from step 8; 3 is the main run
+DATA_PATH = 'data/modeling_dataset_weather.csv' if FORECAST_DAY == 3 else f'data/modeling_dataset_weather_day{FORECAST_DAY}.csv'
 TEST_START = '2026-01-01'          # 2026 is never used
-FC_START = '2024-01-21'            # first complete shift with GFS forecasts
+FC_START = {3: '2024-01-21', 4: '2024-01-22'}[FORECAST_DAY]   # first complete shift with GFS forecasts
 EXCLUDE = ['year']                 # same as evaluate_models.py: year is unseen in fold 1
 EXTREME_QUANTILE = 0.9             # "extreme" = top 10% of 2025 shifts by ERA5 value
 CAL_QUANTILES = np.linspace(0, 1, 101)
@@ -45,9 +49,9 @@ VERSIONS = {
     'C-cal ERA5 / calibrated forecast': ('era5', 'fc_cal', None, WEATHER),
     "C' forecast / forecast": ('fc', 'fc', FC_START, WEATHER),
     "C'3 forecast / forecast, 3 features": ('fc', 'fc', FC_START, SMALL),
-    "A' no weather, from 2024-01-21": (None, None, FC_START, []),
+    f"A' no weather, from {FC_START}": (None, None, FC_START, []),
 }
-A, A_PRIME = 'A  no weather', "A' no weather, from 2024-01-21"
+A, A_PRIME = 'A  no weather', f"A' no weather, from {FC_START}"
 
 # 1. read the dataset and drop 2026
 df = load_dataset(DATA_PATH)
