@@ -51,12 +51,23 @@ def add_special_days(df):
     """
     df = df.copy()
     day = df[DATE_COL]
-    thanksgiving = day.dt.month.eq(11) & day.dt.dayofweek.eq(3) & day.dt.day.between(22, 28)   # 4th Thursday
-    df["is_nye"] = (day.dt.month.eq(12) & day.dt.day.eq(31)).astype(int)
-    df["is_day_after_thanksgiving"] = day.isin(set(day[thanksgiving] + pd.Timedelta(days=1))).astype(int)
-    df["is_xmas"] = (day.dt.month.eq(12) & day.dt.day.between(24, 26)).astype(int)
-    return df, {"special days": SPECIAL_DAYS}
+    df["is_nye"] = (
+        day.dt.month.eq(12) & day.dt.day.eq(31)
+    ).astype(int)
 
+    # Black Friday: Friday after the fourth Thursday of November.
+    # Calculate directly from the target date so single-day predictions work.
+    df["is_day_after_thanksgiving"] = (
+        day.dt.month.eq(11)
+        & day.dt.dayofweek.eq(4)
+        & day.dt.day.between(23, 29)
+    ).astype(int)
+
+    df["is_xmas"] = (
+        day.dt.month.eq(12) & day.dt.day.between(24, 26)
+    ).astype(int)
+
+    return df, {"special days": SPECIAL_DAYS}
 
 # ---------------------------------------------------------------- calendar (Step 12)
 

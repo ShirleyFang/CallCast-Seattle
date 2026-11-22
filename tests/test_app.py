@@ -312,9 +312,9 @@ class ForecastTests(AppTestCase):
 
     def test_model_gives_34_stations_and_the_expected_totals(self):
         for target, total in [
-            ("2026-10-29", 317.7),
-            ("2026-10-30", 327.7),
-            ("2026-10-31", 311.2),
+            ("2026-10-29", 317.5),
+            ("2026-10-30", 329.5),
+            ("2026-10-31", 311.6),
         ]:
             result, _ = learned_predictions(self.features, target, self.ids)
             self.assertEqual(len(result), 34)
@@ -469,13 +469,21 @@ class ScreenTests(unittest.TestCase):
         # No prediction source switch: the app always shows the trained model.
         self.assertEqual(len(app.sidebar.radio), 0)
         # Default view: Oct 24, SFD 10, the model's numbers.
-        self.assertEqual(app.metric[0].value, "313.6")
-        self.assertEqual(app.metric[1].value, "39.3")
-        # Both cards compare with the usual number: 313.6 - 306.4 = +7.1 (unrounded sums).
-        self.assertEqual(app.metric[0].delta, "+7.1 vs usual")
-        self.assertEqual(app.metric[1].delta, "+0.3 vs usual")
+        self.assertEqual(app.metric[0].value, "312.8")
+        self.assertEqual(app.metric[1].value, "40.0")
+        # Both cards compare with the usual number: 312.8 - 306.4 = +6.3 (unrounded sums).
+        self.assertEqual(app.metric[0].delta, "+6.3 vs usual")
+        self.assertEqual(app.metric[1].delta, "+1.1 vs usual")
         table = app.dataframe[0].value
-        self.assertAlmostEqual(table["Expected calls"].sum(), 313.6, delta=0.05)
+        self.assertAlmostEqual(table["Expected calls"].sum(), 312.8, delta=0.05)
+        # The table covers all 34 stations, none below 0, and the city card is their sum.
+        self.assertEqual(len(table), 34)
+        self.assertTrue((table["Expected calls"] >= 0).all())
+        self.assertAlmostEqual(
+            float(app.metric[0].value.replace(",", "")),
+            table["Expected calls"].sum(),
+            delta=0.05,
+        )
         self.assertEqual(
             list(table.columns),
             [
@@ -492,8 +500,8 @@ class ScreenTests(unittest.TestCase):
         # Switching station changes the station number, not the citywide total.
         app.sidebar.selectbox[0].select("SFD 2").run()
         self.assertFalse(app.exception)
-        self.assertEqual(app.metric[0].value, "313.6")
-        self.assertEqual(app.metric[1].value, "32.1")
+        self.assertEqual(app.metric[0].value, "312.8")
+        self.assertEqual(app.metric[1].value, "31.7")
 
     def test_calendar_days_are_readable_on_the_dark_sidebar(self):
         # The picker opens on the sidebar's secondary color, so the days you can pick
@@ -567,9 +575,9 @@ class ScreenTests(unittest.TestCase):
     def test_likely_range_is_shown_for_city_station_and_table(self):
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
         captions = [c.value for c in app.caption]
-        # The city and the selected station (SFD 10, expected 39.3) each get a range.
-        self.assertIn("Likely range: 284 to 346", captions)
-        self.assertIn("Likely range: 32 to 48", captions)
+        # The city and the selected station (SFD 10, expected 40.0) each get a range.
+        self.assertIn("Likely range: 283 to 345", captions)
+        self.assertIn("Likely range: 31 to 50", captions)
         meaning = next(c for c in captions if "4 in 5" in c)
         self.assertIn("not a staffing recommendation", meaning)
         self.assertIn("Low and High show the likely range for each station.", captions)
@@ -579,7 +587,7 @@ class ScreenTests(unittest.TestCase):
             self.assertNotIn(word, text)
         # The range follows the date: Oct 31 has its own estimate and range.
         app.sidebar.date_input[0].set_value(date(2026, 10, 31)).run(timeout=60)
-        self.assertIn("Likely range: 281 to 344", [c.value for c in app.caption])
+        self.assertIn("Likely range: 282 to 344", [c.value for c in app.caption])
 
     def test_model_error_is_looked_up_and_shown_once(self):
         # A model failure should give one warning, and the page should ask the model once.
@@ -601,9 +609,9 @@ class ScreenTests(unittest.TestCase):
     def test_forecast_dates_are_labelled_and_checked_on_screen(self):
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
         for day, total in [
-            (date(2026, 10, 29), "317.7"),
-            (date(2026, 10, 30), "327.7"),
-            (date(2026, 10, 31), "311.2"),
+            (date(2026, 10, 29), "317.5"),
+            (date(2026, 10, 30), "329.5"),
+            (date(2026, 10, 31), "311.6"),
         ]:
             app.sidebar.date_input[0].set_value(day).run(timeout=60)
             self.assertFalse(app.exception, str(day))

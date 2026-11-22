@@ -1,5 +1,5 @@
 {
-  "model_name": "Poisson GBM (first pass)",
+  "model_name": "Poisson GBM + special days",
   "trained_through": "2025-12-31",
   "feature_columns": [
     "Station",
@@ -13,5 +13,11 @@
     "avg28",
     "same_weekday_avg4"
   ],
+  "derived_features": [
+    "is_nye",
+    "is_day_after_thanksgiving",
+    "is_xmas"
+  ],
+  "requires_shift_date": true,
   "accepts_missing": true
 }

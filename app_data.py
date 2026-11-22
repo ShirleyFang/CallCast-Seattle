@@ -358,7 +358,8 @@ def learned_predictions(features, target, station_ids, root=ROOT):
     # predict.py is the model team's code and can fail in any way, so show its error on screen.
     try:
         module = _load_predict_module(paths[0])
-        output = module.predict_shift(rows[columns].copy())
+        # predict.py builds the special-day flags from ShiftDate, so it comes along with the inputs.
+        output = module.predict_shift(rows[[*columns, "ShiftDate"]].copy())
     except (
         ImportError,
         AttributeError,
