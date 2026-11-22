@@ -7,10 +7,12 @@
 #
 # Run it from the repository root: uv run python scripts/prediction_ranges.py
 
+import joblib
 import numpy as np
 import pandas as pd
 from cv_utils import DATE_COL, TARGET, build_features, iter_folds, load_dataset
-from sklearn.ensemble import HistGradientBoostingRegressor
+from feature_sets import add_special_days
+from sklearn.base import clone
 
 LOW_Q, HIGH_Q = 0.10, 0.90  # the range holds the middle 80% of misses
 # bands of forecast size: up to 5, 5 to 10, 10 to 20, 20 to 40, over 40
@@ -74,10 +76,15 @@ def coverage(rows, table):
 
 # forecast every 2025 quarter with a model that only saw earlier shifts
 df = load_dataset()
-X, _ = build_features(df, extra_exclude=["year"])  # same inputs as evaluate_models.py
+# The saved model decides the settings and the inputs, so a retrain never leaves the ranges behind.
+bundle = joblib.load("models/poisson_gbm.joblib")
+df, _ = add_special_days(df)
+X, _ = build_features(df, extra_exclude=["year"])
+X = X[bundle["columns"]]
 parts = []
 for fold, (_start, train, valid) in enumerate(iter_folds(df)):
-    model = HistGradientBoostingRegressor(loss="poisson", max_iter=200, random_state=0)
+    # same settings as the saved model, fitted again on the earlier shifts only
+    model = clone(bundle["model"])
     model.fit(X.loc[train.index], train[TARGET])
     parts.append(valid.assign(fold=fold, pred=model.predict(X.loc[valid.index])))
 rows = pd.concat(parts)
@@ -114,12 +121,12 @@ print(
 )
 print(f"\nsaved {OUT_PATH}")
 
-# Result, 2025 rolling CV (actual minus forecast, 10th to 90th percentile; station shifts in brackets):
-#   forecast up to 5: -2.4 to +2.7 (4,892)    5 to 10: -3.5 to +3.7 (3,822)
-#   10 to 20: -4.7 to +4.9 (2,601)    20 to 40: -7.3 to +8.3 (919)    over 40: -9.1 to +10.0 (176)
-#   citywide: -30.0 to +32.5 (365 shifts)
-# Coverage on the shifts the ranges came from: stations 79.8%, citywide 79.5%.
-# Out of sample (ranges from folds 1 to 3, counted on fold 4): stations 78.8%, citywide 70.7%.
-# Every station band holds 76% to 80%. The citywide range runs narrow in the last quarter (92
-# shifts), so read its "about 4 in 5" as about 7 in 10. It describes a forecast made 3 shifts
-# ahead from the untuned model.
+# Result with the retuned model, 2025 rolling CV (actual minus forecast, 10th to 90th percentile;
+# station shifts in brackets):
+#   forecast up to 5: -2.4 to +2.7 (4,898)    5 to 10: -3.5 to +3.8 (3,830)
+#   10 to 20: -4.7 to +4.8 (2,587)    20 to 40: -7.3 to +8.2 (917)    over 40: -8.9 to +9.9 (178)
+#   citywide: -29.6 to +32.0 (365 shifts)
+# Coverage on the shifts the ranges came from: stations 79.7%, citywide 79.7%.
+# Out of sample (ranges from folds 1 to 3, counted on fold 4): stations 78.6%, citywide 71.7%.
+# The citywide range runs narrow in the last quarter (92 shifts), so read its "about 4 in 5" as
+# about 7 in 10. It describes a forecast made 3 shifts ahead.

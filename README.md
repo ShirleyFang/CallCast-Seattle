@@ -177,22 +177,22 @@ The interface has been tested with all 34 stations and successfully integrated w
 
 ### Likely range (`scripts/prediction_ranges.py`)
 
-Measures how far the Poisson GBM's forecasts were from the real calls in 2025 and saves `data/prediction_ranges.csv`, which the app shows as the "likely range" next to each estimate. It uses the same four rolling folds as Step 6 and never trains or scores on 2026. The range is the 10th to 90th percentile of (actual − forecast), so about 4 in 5 shifts land inside it. Larger forecasts miss by more, so a station gets one pair per forecast size, and the citywide total has its own pair:
+Measures how far the Poisson GBM's forecasts were from the real calls in 2025 and saves `data/prediction_ranges.csv`, which the app shows as the "likely range" next to each estimate. It uses the same four rolling folds as Step 6 and the settings and inputs of the saved model (`models/poisson_gbm.joblib`), so it follows a retrain, and it never trains or scores on 2026. The range is the 10th to 90th percentile of (actual − forecast), so about 4 in 5 shifts land inside it. Larger forecasts miss by more, so a station gets one pair per forecast size, and the citywide total has its own pair:
 
 | Forecast at a station | Low | High | Station shifts |
 | --------------------- | ---: | ---: | ---: |
-| up to 5               | −2.4 | +2.7 | 4,892 |
-| 5 to 10               | −3.5 | +3.7 | 3,822 |
-| 10 to 20              | −4.7 | +4.9 | 2,601 |
-| 20 to 40              | −7.3 | +8.3 | 919 |
-| over 40               | −9.1 | +10.0 | 176 |
-| citywide (365 shifts) | −30.0 | +32.5 | |
+| up to 5               | −2.4 | +2.7 | 4,898 |
+| 5 to 10               | −3.5 | +3.8 | 3,830 |
+| 10 to 20              | −4.7 | +4.8 | 2,587 |
+| 20 to 40              | −7.3 | +8.2 | 917 |
+| over 40               | −8.9 | +9.9 | 178 |
+| citywide (365 shifts) | −29.6 | +32.0 | |
 
-Coverage on the shifts the ranges were made from: stations 79.8%, citywide 79.5%.
+Coverage on the shifts the ranges were made from: stations 79.7%, citywide 79.7%.
 
-Coverage out of sample (ranges from folds 1 to 3, counted on fold 4): stations 78.8% (every size band 76% to 80%), citywide 70.7%. The citywide range is a little narrow for the last quarter (92 shifts), so read the city's "about 4 in 5" as about 7 in 10.
+Coverage out of sample (ranges from folds 1 to 3, counted on fold 4): stations 78.6% (every size band 73% to 79%), citywide 71.7%. The citywide range is a little narrow for the last quarter (92 shifts), so read the city's "about 4 in 5" as about 7 in 10.
 
-Limits: the ranges describe a forecast made 3 shifts ahead from the untuned model. Each 2025 fold forecasts 0 to 3 months after its training stops, but the app serves dates up to 10 months after the model's training ends. For October 2026 the citywide range probably holds less often than 7 in 10. Run the script again after retraining the model.
+Limits: the ranges describe a forecast made 3 shifts ahead from the retuned model. Each 2025 fold forecasts 0 to 3 months after its training stops, but the app serves dates up to 10 months after the model's training ends. For October 2026 the citywide range probably holds less often than 7 in 10. Run the script again after retraining the model.
 
 ### Step 8: Weather features (`scripts/step8_weather.py`)
 
