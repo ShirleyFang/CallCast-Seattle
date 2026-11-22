@@ -20,13 +20,9 @@ def load_tables(root=ROOT):
     # sfd_stations.csv: names and coordinates for the station menu and map.
     stations = pd.read_csv(root / "data/sfd_stations.csv")
     # station_shift_counts.csv: past totals, categories, and suspected outage flags.
-    counts = pd.read_csv(
-        root / "data/station_shift_counts.csv", parse_dates=["ShiftDate"]
-    )
+    counts = pd.read_csv(root / "data/station_shift_counts.csv")
     # modeling_dataset.csv: calendar and earlier call inputs, plus the calls label.
-    features = pd.read_csv(
-        root / "data/modeling_dataset.csv", parse_dates=["ShiftDate"]
-    )
+    features = pd.read_csv(root / "data/modeling_dataset.csv")
     # Check that each table has rows and the columns the app needs.
     required = [
         (stations, {"station", "lat", "lon"}, "stations"),
@@ -65,7 +61,7 @@ def load_tables(root=ROOT):
             )
     # Read ShiftDate as a date in both tables so they can be matched correctly.
     for table in [counts, features]:
-        dates = pd.to_datetime(table["ShiftDate"], errors="raise")
+        dates = pd.to_datetime(table["ShiftDate"], format="%Y-%m-%d", errors="raise")
         if (
             dates.isna().any()
             or dates.dt.tz is not None

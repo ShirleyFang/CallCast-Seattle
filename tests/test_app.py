@@ -6,6 +6,8 @@ Run: uv run python -m unittest discover -s tests -v
 
 import functools
 import json
+import logging
+import os
 import re
 import tempfile
 import tomllib
@@ -17,7 +19,23 @@ from unittest import mock
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+
+os.environ.setdefault("STREAMLIT_LOGGER_LEVEL", "error")
+
 from streamlit.testing.v1 import AppTest
+
+# AppTest runs Streamlit outside its normal server context; suppress only its
+# expected missing-context messages while keeping other warnings visible.
+
+
+class _IgnoreBareModeWarning(logging.Filter):
+    def filter(self, record):
+        return "missing ScriptRunContext" not in record.getMessage()
+
+
+logging.getLogger(
+    "streamlit.runtime.scriptrunner_utils.script_run_context"
+).addFilter(_IgnoreBareModeWarning())
 
 from app_data import (
     ROOT,
