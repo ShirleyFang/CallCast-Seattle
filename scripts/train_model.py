@@ -52,9 +52,13 @@ def main():
     model = HistGradientBoostingRegressor(
         loss="poisson",
         learning_rate=0.1,
-        max_iter=200,
-        max_leaf_nodes=31,
+        max_iter=300,
+        max_leaf_nodes=23,
+        min_samples_leaf=10,
         l2_regularization=0.0,
+        early_stopping=True,
+        validation_fraction=0.1,
+        n_iter_no_change=10,
         random_state=0,
     )
 
