@@ -18,10 +18,12 @@ from app_data import ROOT
 from event_explore import affected_features, effects_table, load_event_effects, venue_map, venue_rows
 from station_areas import build_station_areas, load_boundary
 
+# The three pairs chosen on 2022-2024 (docs/POST_MODEL_ADJUSTMENT.md), with their extra calls
+# per event day measured on 2022-2025 (the years the final model is trained on).
 CLEAR = {
-    ("Husky football", "Husky Stadium", "SFD 22"): 4.40,
-    ("Seahawks", "Lumen Field", "SFD 10"): 3.84,
-    ("stadium concert", "Lumen Field", "SFD 10"): 4.13,
+    ("Husky football", "Husky Stadium", "SFD 22"): 3.95,
+    ("Seahawks", "Lumen Field", "SFD 10"): 4.58,
+    ("stadium concert", "Lumen Field", "SFD 10"): 4.37,
 }
 
 
@@ -31,20 +33,32 @@ class EventEffectTests(unittest.TestCase):
         cls.effects = load_event_effects()
         cls.shifts = pd.read_csv(ROOT / "data/event_shifts.csv", parse_dates=["ShiftDate"])
 
-    def test_three_clear_pairs_match_the_event_analysis(self):
-        # The same pairs and extra calls as docs/POST_MODEL_ADJUSTMENT.md (2022-2024).
+    def test_three_clear_pairs_with_2022_2025_numbers(self):
         clear = self.effects[self.effects.clear].set_index(["kind", "venue", "station"])
         self.assertEqual(set(clear.index), set(CLEAR))
         for key, extra in CLEAR.items():
             self.assertAlmostEqual(clear.loc[key, "extra_calls"], extra, places=2)
-        self.assertTrue((self.effects.years == "2022-2024").all())
+        self.assertTrue((self.effects.years == "2022-2025").all())
+        self.assertTrue((self.effects.chosen_on == "2022-2024").all())
+        # With more years the three pairs still pass the Step 14 rule.
+        self.assertTrue(((clear.events >= 10) & (clear.extra_pct >= 10) & (clear.t >= 2)).all())
 
-    def test_clear_means_the_step_14_rule(self):
-        rule = (self.effects.events >= 10) & (self.effects.extra_pct >= 10) & (self.effects.t >= 2)
-        pd.testing.assert_series_equal(self.effects.clear, rule, check_names=False)
+    def test_pairs_are_still_chosen_on_2022_2024(self):
+        # "Clear" is the selection from the event analysis, not re-chosen on newer years.
+        import sys
+
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from cv_utils import load_dataset
+        from feature_sets import CHOOSE_END, choose_event_pairs, load_events
+
+        df = load_dataset(str(ROOT / "data/modeling_dataset.csv"))  # feature_sets reads data/ from the repo root
+        _, chosen = choose_event_pairs(df[df.ShiftDate < CHOOSE_END], load_events())
+        self.assertEqual(set(chosen), set(CLEAR))
 
     def test_per_event_rows_add_up_to_the_summary(self):
-        self.assertTrue((self.shifts.ShiftDate < "2025-01-01").all())
+        # 2022-2025 only: the 2026 test year is never used.
+        self.assertTrue((self.shifts.ShiftDate < "2026-01-01").all())
+        self.assertGreaterEqual(self.shifts.ShiftDate.max(), pd.Timestamp("2025-01-01"))
         by_pair = self.shifts.groupby(["kind", "venue", "station"]).difference.agg(["size", "mean"])
         summary = self.effects.set_index(["kind", "venue", "station"]).join(by_pair)
         np.testing.assert_array_equal(summary["size"], summary["events"])
@@ -71,7 +85,7 @@ class VenueMapTests(unittest.TestCase):
     def test_four_venues_with_their_events(self):
         venues = venue_rows(self.effects).set_index("venue")
         self.assertEqual(set(venues.index), {"Lumen Field", "T-Mobile Park", "Climate Pledge Arena", "Husky Stadium"})
-        self.assertIn("Seahawks → SFD 10: +3.8 calls per event day (27 events)", venues.loc["Lumen Field", "body"])
+        self.assertIn("Seahawks → SFD 10: +4.6 calls per event day (35 events)", venues.loc["Lumen Field", "body"])
         self.assertIn("No clear effect: Sounders", venues.loc["Lumen Field", "body"])
         self.assertTrue(venues.loc["T-Mobile Park", "body"].startswith("No clear effect"))
         # Lumen Field and T-Mobile Park are 400 m apart: labels go on opposite sides.
@@ -109,8 +123,19 @@ class EventScreenTests(unittest.TestCase):
         self.assertEqual(len(events.dataframe), 2)
         self.assertEqual(len(events.dataframe[0].value), 3)  # the clear pairs
         text = " ".join(c.value for c in events.caption)
-        self.assertIn("2022-2024", text)
+        self.assertIn("Based on 2022-2025", text)  # the numbers
+        self.assertIn("chosen on 2022-2024", text)  # the pair selection
+        self.assertNotIn("2026", text)
         self.assertIn("These are averages", text)
+        # Unlike Citywide and Stations, the event numbers are fixed and say so.
+        self.assertIn("Past event days from Jan 2022 to Dec 2025", events.caption[0].value)
+        self.assertIn("do not change with the selected date", events.caption[0].value)
+        before = events.dataframe[0].value
+        from datetime import date
+
+        app.sidebar.date_input[0].set_value(date(2026, 3, 10)).run(timeout=60)
+        later = next(t for t in app.tabs if t.label == "Events").dataframe[0].value
+        pd.testing.assert_frame_equal(before, later)
 
 
 if __name__ == "__main__":

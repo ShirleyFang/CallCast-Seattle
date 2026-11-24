@@ -375,7 +375,7 @@ with explore_tab:
     # data all use the same, latest history.
     if not history.empty:
         through = history["ShiftDate"].max()
-        note = f"Using finished shifts up to {through:%a %b %d, %Y}"
+        note = f"Citywide and Stations use finished shifts up to {through:%a %b %d, %Y}"
         # Compare with the last day of counts, not `through`: an outage shift just before the
         # planning time also makes `through` earlier, but newer data still exists.
         if target_date - pd.Timedelta(days=3) > last:
@@ -398,20 +398,30 @@ with explore_tab:
             st.caption("All 34 station areas added together, per shift (08:00 to 08:00).")
             st.dataframe(compare_summary(city, one, average=False), width="stretch")
             st.write(f"Citywide calls per shift, last {TREND_DAYS} days (7-shift average)")
+            st.caption(
+                "Each point averages the 7 shifts up to that day, which smooths out "
+                "day-to-day swings. Look for lasting rises or drops, not single bumps."
+            )
             st.plotly_chart(
                 trend_chart(trend(city, one, average=False)), width="stretch", config=PLOT_CONFIG
             )
             a, b = st.columns(2)
             a.write("Average calls per shift by weekday")
+            a.caption("Taller bars are busier days of the week.")
             a.plotly_chart(
                 weekday_chart(weekday_means(city, one, average=False)),
                 width="stretch",
                 config=PLOT_CONFIG,
             )
             b.write("Average calls per shift by month")
+            b.caption("Each point is one month since 2022: shows seasons and longer-term changes.")
             # Averaged per shift, so longer months do not win by size alone.
             zoom_safe_line_chart(b, monthly(city), "%b %Y", color=CITY_COLOR)
             st.write("Share of calls by category")
+            st.caption(
+                "How the city's calls split by type. Point at a bar to see the average "
+                "number of calls per shift."
+            )
             st.plotly_chart(
                 category_chart(
                     category_shares(city, one, average=False),
@@ -461,14 +471,23 @@ with explore_tab:
             )
             st.dataframe(compare_summary(history, picked), width="stretch")
             st.write(f"Calls per shift, last {TREND_DAYS} days (7-shift average)")
+            st.caption(
+                "One line per station; the grey dashed line is the average station. Each "
+                "point averages the 7 shifts up to that day. Look for lasting rises or drops."
+            )
             st.plotly_chart(
                 trend_chart(trend(history, picked)), width="stretch", config=PLOT_CONFIG
             )
             st.write("Average calls per shift by month (all history)")
+            st.caption(
+                "Each point is one month since 2022: shows seasons and whether a station "
+                "has become busier or quieter over the years."
+            )
             st.plotly_chart(
                 monthly_chart(monthly_means(history, picked)), width="stretch", config=PLOT_CONFIG
             )
             st.write("Average calls per shift by weekday")
+            st.caption("Taller bars are busier days; compare each station with the striped average.")
             st.plotly_chart(
                 weekday_chart(weekday_means(history, picked)), width="stretch", config=PLOT_CONFIG
             )
@@ -492,6 +511,10 @@ with explore_tab:
         if not history.empty:
             # Every station at a glance, in number order; picked stations keep their colours.
             st.write("Average calls per shift by station")
+            st.caption(
+                "One bar per station, in number order. Bars above the dashed line are busier "
+                "than the average station; picked stations are shown in their colours."
+            )
             st.plotly_chart(
                 station_bar_chart(station_means(history, station_ids), picked),
                 width="stretch",

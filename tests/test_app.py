@@ -667,7 +667,7 @@ class ScreenTests(unittest.TestCase):
         def explore_note_and_table():
             explore = next(t for t in app.tabs if t.label == "Explore")
             city = next(t for t in app.tabs if t.label == "Citywide")
-            note = next(c.value for c in explore.caption if c.value.startswith("Using finished shifts"))
+            note = next(c.value for c in explore.caption if c.value.startswith("Citywide and Stations use finished shifts"))
             return note, city.dataframe[0].value
 
         for day, expected in [
@@ -683,6 +683,16 @@ class ScreenTests(unittest.TestCase):
         _, nov = explore_note_and_table()
         app.sidebar.date_input[0].set_value(date(2027, 1, 20)).run(timeout=60)
         pd.testing.assert_frame_equal(nov, explore_note_and_table()[1])
+
+    def test_explore_charts_explain_how_to_read_them(self):
+        # Every Explore chart has a one-line note on what it shows and how to read it.
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+        city = " ".join(c.value for c in next(t for t in app.tabs if t.label == "Citywide").caption)
+        for phrase in ["smooths out day-to-day swings", "busier days of the week",
+                       "seasons and longer-term changes", "split by type"]:
+            self.assertIn(phrase, city)
+        stations = " ".join(c.value for c in next(t for t in app.tabs if t.label == "Stations").caption)
+        self.assertIn("Bars above the dashed line are busier", stations)
 
     def test_long_range_dates_are_labelled_on_screen(self):
         # From Nov 1 (4 shifts after the last counts) to Jan 26, 2027 the estimate uses

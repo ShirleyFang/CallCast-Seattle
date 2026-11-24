@@ -187,6 +187,12 @@ def show_event_effects(st, areas=None, boundary=None, path=EFFECTS_PATH):
         st.info(f"Past event effects are not available: {exc}")
         return
     years = effects["years"].iloc[0]
+    first, last = years.split("-")
+    # Unlike Citywide and Stations, these numbers are fixed: they do not follow the date.
+    st.caption(
+        f"Past event days from Jan {first} to Dec {last}. These numbers do not change with "
+        "the selected date."
+    )
     if areas is not None and boundary is not None:
         st.write("Venues and the stations they affect")
         st.pydeck_chart(venue_map(effects, areas, boundary))
@@ -204,10 +210,12 @@ def show_event_effects(st, areas=None, boundary=None, path=EFFECTS_PATH):
     clear = effects[effects["clear"]]
     st.write("Clear effect")
     _show_table(st, clear)
+    chosen_on = effects["chosen_on"].iloc[0] if "chosen_on" in effects else years
     st.caption(
         "On these event days the station usually had more calls than on similar days: at "
-        "least 10 events, at least 10% more, and consistent from event to event. These are "
-        "averages: some event days were much busier and some were not busier at all."
+        "least 10 events, at least 10% more, and consistent from event to event (pairs "
+        f"chosen on {chosen_on}). These are averages: some event days were much busier and "
+        "some were not busier at all."
     )
     st.write("No clear effect")
     _show_table(st, effects[~effects["clear"]])
