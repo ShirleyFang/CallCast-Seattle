@@ -21,6 +21,8 @@ from app_data import (
     validate_predictions,
 )
 
+from event_warnings import get_event_warnings
+
 # Plain-word column names for the table and the download.
 COLUMN_NAMES = {
     "predicted_calls": "Expected calls",
@@ -237,6 +239,16 @@ with prediction_tab:
         st.caption(
             "Usual = the average of earlier shifts on this weekday. Difference = expected minus usual."
         )
+
+        # Show station-specific event warnings without changing model predictions.
+        event_warnings = get_event_warnings(target_date, station)
+
+        for warning in event_warnings:
+            st.warning(warning)
+
+        if event_warnings:
+            st.caption("Event warnings are informational and are not included in the forecast.")
+
         # Add lat/lon from sfd_stations.csv to put each station's estimate on the map.
         map_data = stations.merge(
             view, left_on="station", right_on="Station", validate="one_to_one"
