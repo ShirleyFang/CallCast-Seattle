@@ -30,6 +30,7 @@ dependencies = [
     "streamlit",
     "requests",
     "statsmodels>=0.15.0",
+    "shapely>=2.2.0",
 ]
 
 [tool.uv]

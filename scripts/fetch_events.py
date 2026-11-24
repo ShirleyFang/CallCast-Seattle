@@ -17,8 +17,11 @@ import urllib.request
 
 import pandas as pd
 
-FIRST, LAST = pd.Timestamp("2022-01-01"), pd.Timestamp("2026-12-31")   # same years as the modeling data
-SEASONS = range(2021, 2027)          # a season that starts in 2021 can still have games in 2022
+# from the first modeling year to the end of the app's forecast horizon
+# (last known shift 2026-10-28 + FORECAST_DAYS = 90 in step4_features.py)
+FIRST, LAST = pd.Timestamp("2022-01-01"), pd.Timestamp("2027-01-26")
+SEASONS = range(2021, 2027)          # a season that starts in 2021 can still have games in 2022;
+                                     # the 2026 NFL and 2026-27 NHL seasons run into January 2027
 SEATTLE_VENUES = ["Lumen Field", "T-Mobile Park", "Climate Pledge Arena", "Husky Stadium"]
 
 

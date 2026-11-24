@@ -5,7 +5,6 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from app_data import (
-    GROUPS,
     ROOT,
     add_likely_range,
     citywide_range,
@@ -20,6 +19,36 @@ from app_data import (
     target_dates,
     validate_predictions,
 )
+from station_areas import (
+    area_map,
+    build_station_areas,
+    load_boundary,
+    recent_averages,
+    selected_stations,
+)
+from event_explore import show_event_effects
+from station_compare import (
+    CITY,
+    CITY_COLOR,
+    MAX_COMPARE,
+    PLOT_CONFIG,
+    TREND_DAYS,
+    category_chart,
+    category_means,
+    category_shares,
+    citywide,
+    monthly,
+    monthly_chart,
+    monthly_means,
+    station_bar_chart,
+    station_color,
+    station_means,
+    summary as compare_summary,
+    trend,
+    trend_chart,
+    weekday_chart,
+    weekday_means,
+)
 
 # Plain-word column names for the table and the download.
 COLUMN_NAMES = {
@@ -30,13 +59,6 @@ COLUMN_NAMES = {
     "high": "High",
     "ShiftDate": "Shift date",
     "AsOf": "Planning time",
-}
-# Plain names for the four call categories in the Explore chart.
-CATEGORY_NAMES = {
-    "fire": "Fire",
-    "medical": "Medical",
-    "non_emergency": "Non-emergency",
-    "other": "Other",
 }
 # Column order for the table and the download.
 TABLE_COLUMNS = [
@@ -49,6 +71,10 @@ TABLE_COLUMNS = [
 ]
 
 # Outside pages a planner can open for live incidents and for station coverage.
+# The first 3 shifts after the last day of counts use real recent calls (lag3 is known);
+# later shifts use typical values instead (MIN_LAG and data/lag_fill_means.csv in step 4).
+RECENT_CALL_SHIFTS = 3
+
 LINKS = (
     "Live incidents: [SFD Live](https://sfdlive.com/) · "
     "Station coverage: [Seattle Breaking guide]"
@@ -66,7 +92,15 @@ def read_data(stamps):
     return load_tables()
 
 
-def zoom_safe_line_chart(container, series, tick_format="%b %d"):
+@st.cache_resource
+def read_station_areas(stations_stamp):
+    # Nearest-station areas inside the city boundary; rebuilt when sfd_stations.csv changes.
+    stations = pd.read_csv(ROOT / "data/sfd_stations.csv")
+    boundary = load_boundary()
+    return build_station_areas(stations, boundary), boundary
+
+
+def zoom_safe_line_chart(container, series, tick_format="%b %d", color="#2F5D8A"):
     """Draw a line chart you can scroll-zoom, but never zoom out past the data."""
     # minallowed and maxallowed stop the zoom at the data. The default chart let the line
     # shrink to a sliver, with a year of empty dates and negative call counts around it.
@@ -76,7 +110,7 @@ def zoom_safe_line_chart(container, series, tick_format="%b %d"):
             x=series.index,
             y=series.to_numpy(),
             mode="lines",
-            line={"color": "#2F5D8A", "width": 2},
+            line={"color": color, "width": 2},
             connectgaps=False,
             hovertemplate="%{x|" + tick_format + "}: %{y:.1f} calls<extra></extra>",
         )
@@ -148,6 +182,7 @@ target_date = st.sidebar.date_input(
     min_value=min_date,
     max_value=max_date,
 )
+st.sidebar.caption(f"Estimates are available up to {max_date:%b %d, %Y}.")
 station = st.sidebar.selectbox(
     "Station area",
     station_ids,
@@ -171,14 +206,24 @@ with prediction_tab:
     end = pd.Timestamp(target_date) + pd.Timedelta(days=1)
     # After the last day of counts the shift has not happened yet, so it is labelled Forecast.
     is_forecast = target_date > last
+    # Past the first RECENT_CALL_SHIFTS forecast shifts, no recent calls are known, so the
+    # model's recent-call inputs are typical values for the station, month and weekday.
+    is_long_range = target_date > last + pd.Timedelta(days=RECENT_CALL_SHIFTS)
     st.subheader(
         f"{target_date:%a %b %d} 08:00 → {end:%a %b %d} 08:00"
         + ("  :red[Forecast]" if is_forecast else "")
+        + (" · long-range estimate" if is_long_range else "")
     )
     if is_forecast:
         st.caption(
             f"Forecast: this shift is after the last day of data ({last:%b %d, %Y}), "
             "so there are no actual calls to compare it with."
+        )
+    if is_long_range:
+        st.caption(
+            "Long-range estimate: no calls close to this date are known yet, so the estimate "
+            "uses the typical pattern for this station, month, weekday and holidays. "
+            "It is less precise than an estimate for the next few days."
         )
     usual = None
     result = None
@@ -236,6 +281,9 @@ with prediction_tab:
         )
         st.caption(
             "Usual = the average of earlier shifts on this weekday. Difference = expected minus usual."
+        )
+        st.caption(
+            "The estimate does not include weather or events such as games."
         )
         # Add lat/lon from sfd_stations.csv to put each station's estimate on the map.
         map_data = stations.merge(
@@ -323,31 +371,135 @@ with explore_tab:
     st.caption(
         "Same history as the Prediction tab: finished shifts only, without shifts that have missing data."
     )
-    part = history.loc[history["Station"] == station].copy()
-    if part.empty:
-        st.info("No history is available for this selection.")
-    else:
-        # Average this station's past calls by weekday, displayed Monday through Sunday.
-        part["weekday"] = part["ShiftDate"].dt.dayofweek
-        weekday = part.groupby("weekday")["calls"].mean().reindex(range(7))
-        weekday.index = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        a, b = st.columns(2)
-        a.write("Average calls by weekday")
-        a.bar_chart(weekday, sort=False)
-        b.write("Average calls per shift by month")
-        # Group by year and month and average per shift so longer months do not win by size alone.
-        monthly = part.groupby(part["ShiftDate"].dt.to_period("M"))["calls"].mean()
-        monthly.index = monthly.index.to_timestamp()
-        zoom_safe_line_chart(b, monthly, "%b %Y")
-        # Compare every station, then show the selected station's past call category mix.
-        st.write("Average calls per shift by station")
-        # reindex puts the stations in number order; the default sorts SFD 2 after SFD 18.
-        by_station = history.groupby("Station")["calls"].mean().reindex(station_ids)
-        st.bar_chart(by_station, sort=False)
-        st.write(f"{station}: average calls by category")
-        # Show plain names instead of column names such as non_emergency.
-        mix = part[GROUPS].mean().rename(CATEGORY_NAMES)
-        st.bar_chart(mix, sort=False)
+    # Say which shifts the charts use: they stop at the planning time, and dates past the
+    # data all use the same, latest history.
+    if not history.empty:
+        through = history["ShiftDate"].max()
+        note = f"Using finished shifts up to {through:%a %b %d, %Y}"
+        # Compare with the last day of counts, not `through`: an outage shift just before the
+        # planning time also makes `through` earlier, but newer data still exists.
+        if target_date - pd.Timedelta(days=3) > last:
+            note += (
+                ", the last day of data. Later dates show the same history until "
+                "new calls are added."
+            )
+        else:
+            note += ", the last shift finished by the planning time."
+        st.caption(note)
+    # Three views of the same history: the whole city (default), station areas and
+    # comparisons, and past events.
+    city_view, stations_view, events_view = st.tabs(["Citywide", "Stations", "Events"])
+    with city_view:
+        if history.empty:
+            st.info("No history is available for this selection.")
+        else:
+            city = citywide(history)
+            one = [CITY]
+            st.caption("All 34 station areas added together, per shift (08:00 to 08:00).")
+            st.dataframe(compare_summary(city, one, average=False), width="stretch")
+            st.write(f"Citywide calls per shift, last {TREND_DAYS} days (7-shift average)")
+            st.plotly_chart(
+                trend_chart(trend(city, one, average=False)), width="stretch", config=PLOT_CONFIG
+            )
+            a, b = st.columns(2)
+            a.write("Average calls per shift by weekday")
+            a.plotly_chart(
+                weekday_chart(weekday_means(city, one, average=False)),
+                width="stretch",
+                config=PLOT_CONFIG,
+            )
+            b.write("Average calls per shift by month")
+            # Averaged per shift, so longer months do not win by size alone.
+            zoom_safe_line_chart(b, monthly(city), "%b %Y", color=CITY_COLOR)
+            st.write("Share of calls by category")
+            st.plotly_chart(
+                category_chart(
+                    category_shares(city, one, average=False),
+                    category_means(city, one, average=False),
+                ),
+                width="stretch",
+                config=PLOT_CONFIG,
+            )
+            st.caption("The Stations tab shows each station area and compares stations.")
+    with stations_view:
+        # Station area map: city boundary and nearest-station areas, with recent averages on hover.
+        st.write("Station areas")
+        picked = []
+        if not history.empty:
+            areas, boundary = read_station_areas(stamps[0])
+            # The map is drawn before this run's click is read, so colour the areas picked so far
+            # (kept by Streamlit under the chart's key) with the same colours as the charts below.
+            before = selected_stations(st.session_state.get("station_area_map"))[:MAX_COMPARE]
+            fills = {name: station_color(before, name, alpha=150) for name in before}
+            # Click areas to pick stations; clicking a picked area again unpicks it.
+            event = st.pydeck_chart(
+                area_map(areas, boundary, stations, recent_averages(history), fills),
+                on_select="rerun",
+                selection_mode="multi-object",
+                key="station_area_map",
+            )
+            picked = selected_stations(event)
+            st.caption(
+                "Each outlined area is the part of Seattle closest to that station, so its edges are "
+                "approximate. Point at an area to see its average calls per shift over the last "
+                f"week and month known at the planning time. Click up to {MAX_COMPARE} areas to "
+                "compare them; click an area again to remove it."
+            )
+        if len(picked) > MAX_COMPARE:
+            st.warning(
+                f"You picked {len(picked)} stations ({', '.join(picked)}). Up to {MAX_COMPARE} can "
+                "be compared at once: click an area again to remove it."
+            )
+        elif picked:
+            # 1 to MAX_COMPARE picked stations, each chart with the average station as a reference.
+            st.subheader(
+                picked[0] if len(picked) == 1 else "Comparing " + ", ".join(picked)
+            )
+            st.caption(
+                f"Average station = citywide calls divided by {len(station_ids)} stations "
+                "(grey dashed line), so it is on the same scale as one station."
+            )
+            st.dataframe(compare_summary(history, picked), width="stretch")
+            st.write(f"Calls per shift, last {TREND_DAYS} days (7-shift average)")
+            st.plotly_chart(
+                trend_chart(trend(history, picked)), width="stretch", config=PLOT_CONFIG
+            )
+            st.write("Average calls per shift by month (all history)")
+            st.plotly_chart(
+                monthly_chart(monthly_means(history, picked)), width="stretch", config=PLOT_CONFIG
+            )
+            st.write("Average calls per shift by weekday")
+            st.plotly_chart(
+                weekday_chart(weekday_means(history, picked)), width="stretch", config=PLOT_CONFIG
+            )
+            st.write("Share of calls by category")
+            st.caption(
+                "Shares, so busy and quiet stations can be compared directly. Point at a bar "
+                "to see the average number of calls per shift too."
+            )
+            st.plotly_chart(
+                category_chart(
+                    category_shares(history, picked), category_means(history, picked)
+                ),
+                width="stretch",
+                config=PLOT_CONFIG,
+            )
+        elif not history.empty:
+            st.info(
+                f"Click up to {MAX_COMPARE} station areas on the map to see and compare their "
+                "history. The Citywide tab shows the whole city."
+            )
+        if not history.empty:
+            # Every station at a glance, in number order; picked stations keep their colours.
+            st.write("Average calls per shift by station")
+            st.plotly_chart(
+                station_bar_chart(station_means(history, station_ids), picked),
+                width="stretch",
+                config=PLOT_CONFIG,
+            )
+    with events_view:
+        # Past event effects: a venue map over the same station areas, then the tables.
+        show_event_effects(st, *read_station_areas(stamps[0]))
 
 with about_tab:
     # Text only: sources and links, what the numbers mean, what is left out, and what they don't show.

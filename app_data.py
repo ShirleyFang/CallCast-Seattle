@@ -341,6 +341,13 @@ def learned_predictions(features, target, station_ids, root=ROOT):
         raise ValueError("Model input column names must be unique.")
     # Select one modeling_dataset.csv input row per station for the requested target date.
     rows = features.loc[features["ShiftDate"] == target].copy()
+    last_forecast = features["ShiftDate"].max()
+    if rows.empty and target > last_forecast:
+        # forecast_features.csv covers a fixed number of shifts after the last counts.
+        raise ValueError(
+            "No estimate for this date yet: estimates go up to "
+            f"{last_forecast:%b %d, %Y}."
+        )
     if rows.empty:
         # Shifts with a gap in the call data were dropped from modeling_dataset.csv.
         raise ValueError(
