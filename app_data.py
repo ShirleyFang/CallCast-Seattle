@@ -283,7 +283,7 @@ def learned_predictions(features, target, station_ids, root=ROOT):
     # predict.py is the model team's code and can fail in any way, so show its error on screen.
     try:
         spec.loader.exec_module(module)
-        output = module.predict_shift(rows[columns].copy())
+        output = module.predict_shift(rows[[*columns, "ShiftDate"]].copy())
     except (
         ImportError,
         AttributeError,

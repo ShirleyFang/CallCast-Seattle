@@ -260,12 +260,36 @@ class ScreenTests(unittest.TestCase):
         app.sidebar.selectbox[0].select("SFD 2").run()
         self.assertEqual(app.metric[0].value, "306.4")
         self.assertEqual(app.metric[1].value, "32.5")
-        # No predict.py in the repo yet, so model mode shows a warning and no numbers.
-        # Update this part once the trained model is added.
+        # Trained model mode should now display real predictions.
         app.sidebar.radio[0].set_value("Trained model").run()
-        self.assertFalse(app.exception)
-        self.assertTrue(any("not connected yet" in x.value for x in app.warning))
-        self.assertEqual(len(app.metric), 0)
+
+        self.assertFalse(
+            app.exception,
+            [e.message for e in app.exception]
+        )
+
+        # The app should display citywide and selected-station predictions.
+        self.assertGreaterEqual(
+            len(app.metric),
+            2,
+            [w.value for w in app.warning]
+        )
+
+        # Predictions should cover all 34 stations.
+        predictions = app.dataframe[0].value
+
+        self.assertEqual(len(predictions), 34)
+        self.assertTrue((predictions["predicted_calls"] >= 0).all())
+
+        # The citywide metric should match the sum of station predictions.
+        citywide_total = predictions["predicted_calls"].sum()
+        displayed_total = float(app.metric[0].value.replace(",", ""))
+
+        self.assertAlmostEqual(
+            displayed_total,
+            citywide_total,
+            delta=0.05
+        )
 
 
 if __name__ == "__main__":
