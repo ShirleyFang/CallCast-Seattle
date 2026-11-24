@@ -22,6 +22,33 @@ PLOT_CONFIG = {"displayModeBar": False}  # same as the app's other charts: no pl
 TREND_DAYS = 90
 ROLLING = 7
 CITY = "Citywide"  # the whole city's total, for the Explore > Citywide view
+# Explore > Citywide "Show calls for": button label -> (count column, words for titles)
+CALL_TYPES = {
+    "All calls": ("calls", "calls"),
+    "Medical": ("medical", "medical calls"),
+    "Fire": ("fire", "fire calls"),
+    "Non-emergency": ("non_emergency", "non-emergency calls"),
+    "Other": ("other", "other calls"),
+}
+
+
+# Explore > Stations "Colour areas by": how much of each station's calls are of one type.
+# Shares, not counts: busy and quiet stations can then be compared on the same scale.
+SHARE_TYPES = {"Fire share": "fire", "Medical share": "medical", "Other share": "other"}
+
+
+def station_shares(history, column):
+    """Percent of each station's calls of one type, and the same percent for the whole city."""
+    totals = history.groupby("Station")[[column, "calls"]].sum()
+    share = totals[column] / totals["calls"] * 100
+    city = totals[column].sum() / totals["calls"].sum() * 100
+    return share, city
+
+
+def only_type(rows, column):
+    """The same rows with `calls` replaced by one call type, so every table and chart that
+    counts `calls` now counts that type."""
+    return rows.assign(calls=rows[column]) if column != "calls" else rows
 
 
 def station_color(stations, name, alpha=None):
@@ -161,6 +188,44 @@ def trend_chart(table):
             hovertemplate="%{x|%b %d}: %{y:.1f} calls<extra>" + name + "</extra>",
         ))
     return _layout(fig, "Calls per shift (7-shift average)")
+
+
+STACK_ORDER = ["medical", "fire", "other", "non_emergency"]  # bottom to top: biggest first
+
+
+def type_trend(city_rows, days=TREND_DAYS, window=ROLLING):
+    """7-shift rolling mean of each call type over the last `days` shifts (citywide rows).
+
+    Same window and gaps as trend(), one column per call type, so the bands add up to the
+    all-calls line.
+    """
+    rows = city_rows.set_index("ShiftDate")
+    latest = rows.index.max()
+    full = pd.date_range(latest - pd.Timedelta(days=days + window - 2), latest)
+    smooth = rows[STACK_ORDER].reindex(full).rolling(window, min_periods=4).mean()
+    return smooth.loc[latest - pd.Timedelta(days=days - 1):].rename(columns=GROUP_NAMES)
+
+
+def stacked_trend_chart(table):
+    """Citywide calls by type as stacked bands; the top edge is all calls."""
+    # Stacked areas draw a missing value as 0, which would show a false drop to zero (e.g. on
+    # a day without enough shifts for the 7-shift average), so those days are left out.
+    table = table.dropna(how="any")
+    fig = go.Figure()
+    for name in table.columns:
+        fig.add_trace(go.Scatter(
+            x=table.index, y=table[name], name=name, mode="lines", stackgroup="calls",
+            line={"width": 0.5, "color": CATEGORY_COLORS[name]}, fillcolor=CATEGORY_COLORS[name],
+            hovertemplate="%{y:.0f}<extra>" + name + "</extra>",
+        ))
+    total = table.sum(axis=1, min_count=1)
+    fig.add_trace(go.Scatter(  # thin outline on top, so the all-calls total shows on hover
+        x=table.index, y=total, name="All calls", mode="lines", showlegend=False,
+        line={"width": 1, "color": CITY_COLOR}, hovertemplate="%{y:.0f}<extra>All calls</extra>",
+    ))
+    fig = _layout(fig, "Calls per shift (7-shift average)")
+    fig.update_layout(hovermode="x unified", legend={"orientation": "h", "y": -0.18, "traceorder": "reversed"})
+    return fig
 
 
 def monthly_chart(table):

@@ -476,7 +476,7 @@ class ScreenTests(unittest.TestCase):
         )
         # Explore keeps the history charts; model performance stays out of the app.
         explore = " ".join(c.value for c in app.tabs[1].caption)
-        self.assertIn("Same history as the Prediction tab", explore)
+        self.assertIn("without shifts that have missing data", explore)
         shown = " ".join(
             x.value
             for tab in app.tabs
@@ -667,19 +667,30 @@ class ScreenTests(unittest.TestCase):
         def explore_note_and_table():
             explore = next(t for t in app.tabs if t.label == "Explore")
             city = next(t for t in app.tabs if t.label == "Citywide")
-            note = next(c.value for c in explore.caption if c.value.startswith("Citywide and Stations use finished shifts"))
+            # A plain caption normally; an info box when the date is past the data.
+            notes = [c.value for c in explore.caption] + [i.value for i in explore.info]
+            note = next(n for n in notes if "Citywide and Stations use finished shifts" in n)
             return note, city.dataframe[0].value
 
-        for day, expected in [
+        def explore_info():
+            explore = next(t for t in app.tabs if t.label == "Explore")
+            return [i.value for i in explore.info if "after the last day of data" in i.value]
+
+        for day, expected, boxed in [
             # Jan 9 is an outage shift, so the last usable one before the planning time is Jan 8;
             # that is not the end of the data.
-            (date(2026, 1, 12), "up to Thu Jan 08, 2026, the last shift finished by the planning time."),
-            (date(2026, 10, 31), "up to Wed Oct 28, 2026, the last shift finished by the planning time."),
-            (date(2026, 11, 1), "up to Wed Oct 28, 2026, the last day of data. Later dates show the same history"),
+            (date(2026, 1, 12), "up to Thu Jan 08, 2026 (the last one finished by the planning time)", False),
+            (date(2026, 10, 31), "up to Wed Oct 28, 2026 (the last one finished by the planning time)", False),
+            (date(2026, 11, 1), "up to Wed Oct 28, 2026, so every later date shows the same history", True),
         ]:
             app.sidebar.date_input[0].set_value(day).run(timeout=60)
             self.assertFalse(app.exception, str(day))
             self.assertIn(expected, explore_note_and_table()[0])
+            # Past the data the note stands out as an info box, only inside Explore.
+            self.assertEqual(bool(explore_info()), boxed, str(day))
+        prediction = next(t for t in app.tabs if t.label == "Prediction")
+        self.assertFalse(any("after the last day of data" in i.value for i in prediction.info))
+        self.assertIn("The estimate for this date is on the Prediction tab.", explore_info()[0])
         _, nov = explore_note_and_table()
         app.sidebar.date_input[0].set_value(date(2027, 1, 20)).run(timeout=60)
         pd.testing.assert_frame_equal(nov, explore_note_and_table()[1])
@@ -688,7 +699,7 @@ class ScreenTests(unittest.TestCase):
         # Every Explore chart has a one-line note on what it shows and how to read it.
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
         city = " ".join(c.value for c in next(t for t in app.tabs if t.label == "Citywide").caption)
-        for phrase in ["smooths out day-to-day swings", "busier days of the week",
+        for phrase in ["the top edge is all calls", "busier days of the week",
                        "seasons and longer-term changes", "split by type"]:
             self.assertIn(phrase, city)
         stations = " ".join(c.value for c in next(t for t in app.tabs if t.label == "Stations").caption)

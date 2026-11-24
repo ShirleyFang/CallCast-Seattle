@@ -55,6 +55,15 @@ class EventEffectTests(unittest.TestCase):
         _, chosen = choose_event_pairs(df[df.ShiftDate < CHOOSE_END], load_events())
         self.assertEqual(set(chosen), set(CLEAR))
 
+    def test_extra_calls_by_type_add_up(self):
+        # The four types add up to all extra calls; at the clear pairs the extra calls are mostly
+        # medical, and fire calls barely change.
+        types = ["extra_fire", "extra_medical", "extra_non_emergency", "extra_other"]
+        np.testing.assert_allclose(self.effects[types].sum(axis=1), self.effects.extra_calls, atol=0.02)
+        clear = self.effects[self.effects.clear]
+        self.assertTrue((clear.extra_medical > clear[["extra_fire", "extra_other"]].max(axis=1)).all())
+        self.assertTrue((clear.extra_fire.abs() < 0.5).all())
+
     def test_per_event_rows_add_up_to_the_summary(self):
         # 2022-2025 only: the 2026 test year is never used.
         self.assertTrue((self.shifts.ShiftDate < "2026-01-01").all())
@@ -85,7 +94,10 @@ class VenueMapTests(unittest.TestCase):
     def test_four_venues_with_their_events(self):
         venues = venue_rows(self.effects).set_index("venue")
         self.assertEqual(set(venues.index), {"Lumen Field", "T-Mobile Park", "Climate Pledge Arena", "Husky Stadium"})
-        self.assertIn("Seahawks → SFD 10: +4.6 calls per event day (35 events)", venues.loc["Lumen Field", "body"])
+        self.assertIn("Seahawks → SFD 10: +4.6 calls per event day (35 events), mostly medical (+3.5) "
+                      "and non-emergency (+1.1)", venues.loc["Lumen Field", "body"])
+        self.assertIn("mostly medical (+2.2), non-emergency (+1.0) and other (+0.6)",
+                      venues.loc["Husky Stadium", "body"])
         self.assertIn("No clear effect: Sounders", venues.loc["Lumen Field", "body"])
         self.assertTrue(venues.loc["T-Mobile Park", "body"].startswith("No clear effect"))
         # Lumen Field and T-Mobile Park are 400 m apart: labels go on opposite sides.

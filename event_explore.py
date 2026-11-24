@@ -49,6 +49,23 @@ def _signed(x):
     return f"{x:+.1f}"
 
 
+TYPE_WORDS = {"medical": "medical", "non_emergency": "non-emergency", "fire": "fire", "other": "other"}
+
+
+def _mostly(row, at_least=0.5):
+    """Which call types made up the extra calls, e.g. 'mostly medical (+3.5) and
+    non-emergency (+1.2)': types adding at least `at_least` calls per event day, largest first."""
+    parts = sorted(
+        ((getattr(row, f"extra_{t}", 0.0), word) for t, word in TYPE_WORDS.items()),
+        reverse=True,
+    )
+    parts = [f"{word} ({_signed(v)})" for v, word in parts if v >= at_least]
+    if not parts:
+        return ""
+    listed = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+    return "mostly " + listed
+
+
 def venue_rows(effects):
     """One row per venue: position, label offset, and hover text listing its events."""
     rows = []
@@ -56,6 +73,7 @@ def venue_rows(effects):
         clear = group[group["clear"]]
         lines = [
             f"{r.label} → {r.station}: {_signed(r.extra_calls)} calls per event day ({r.events} events)"
+            + (f", {_mostly(r)}" if _mostly(r) else "")
             for r in clear.itertuples()
         ]
         others = sorted(set(group.loc[~group["clear"], "label"]) - set(clear["label"]))
@@ -79,6 +97,7 @@ def affected_features(effects, areas):
     for station, group in clear.groupby("station"):
         body = "\n".join(
             f"{r.label} at {r.venue}: {_signed(r.extra_calls)} calls per event day"
+            + (f", {_mostly(r)}" if _mostly(r) else "")
             for r in group.itertuples()
         )
         features.append({
@@ -194,30 +213,31 @@ def show_event_effects(st, areas=None, boundary=None, path=EFFECTS_PATH):
         "the selected date."
     )
     if areas is not None and boundary is not None:
-        st.write("Venues and the stations they affect")
+        st.markdown("##### Venues and the stations they affect")
         st.pydeck_chart(venue_map(effects, areas, boundary))
         st.caption(
-            "Dark dots are the four large venues. Coloured areas are the stations where calls "
+            "Dark dots are the four large venues. Colored areas are the stations where calls "
             "were clearly higher on event days: gold for SFD 10 (Lumen Field, T-Mobile Park), "
-            "green for SFD 22 (Husky Stadium). Point at a venue or a coloured area for details."
+            "green for SFD 22 (Husky Stadium). Point at a venue or a colored area for details."
         )
-    st.write("How calls changed near the venues on past event days")
+    st.markdown("##### How calls changed near the venues on past event days")
     st.caption(
         "For each venue, the 2 nearest stations. Usual calls = the same station and weekday, "
         "up to 4 weeks before and after, without that kind of event. "
         f"Based on {years}."
     )
     clear = effects[effects["clear"]]
-    st.write("Clear effect")
+    st.markdown("**Clear effect**")
     _show_table(st, clear)
     chosen_on = effects["chosen_on"].iloc[0] if "chosen_on" in effects else years
     st.caption(
         "On these event days the station usually had more calls than on similar days: at "
         "least 10 events, at least 10% more, and consistent from event to event (pairs "
         f"chosen on {chosen_on}). These are averages: some event days were much busier and "
-        "some were not busier at all."
+        "some were not busier at all. The extra calls were mostly medical and non-emergency; "
+        "fire calls did not change."
     )
-    st.write("No clear effect")
+    st.markdown("**No clear effect**")
     _show_table(st, effects[~effects["clear"]])
     st.caption(
         "Smaller or less consistent changes. Arena events at Climate Pledge Arena and most "

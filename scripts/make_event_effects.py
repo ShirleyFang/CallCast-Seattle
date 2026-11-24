@@ -69,6 +69,20 @@ def effect_table(calls, events, before):
     return pd.DataFrame(rows)
 
 
+TYPE_GROUPS = ["fire", "medical", "non_emergency", "other"]  # categories in station_shift_counts.csv
+
+
+def type_counts():
+    """Per call type: one row per day, one column per station, like calls_by_station.
+
+    Outage shifts are left out, as in modeling_dataset.csv, so each type uses exactly the
+    shifts the totals use.
+    """
+    counts = pd.read_csv("data/station_shift_counts.csv", parse_dates=["ShiftDate"])
+    counts = counts[~counts["Masked"].astype(str).str.lower().eq("true") & (counts["ShiftDate"] < EFFECT_END)]
+    return {g: counts.pivot(index="ShiftDate", columns="Station", values=g).asfreq("D") for g in TYPE_GROUPS}
+
+
 def main():
     df = load_dataset()
     df = df[df["ShiftDate"] < EFFECT_END]  # 2026 (the test year) is never read
@@ -87,10 +101,23 @@ def main():
     # venue position, for the venue map in the app
     effects["venue_lat"] = effects["venue"].map(VENUES["lat"])
     effects["venue_lon"] = effects["venue"].map(VENUES["lon"])
+    # 3. which call types the extra calls are: the same comparison per type (same shifts,
+    # same usual weeks), from the category counts in station_shift_counts.csv
+    by_type = type_counts()
+    for group in TYPE_GROUPS:
+        effects[f"extra_{group}"] = [
+            event_effect(by_type[group], station, events.loc[(events["kind"] == kind) & (events["venue"] == venue), "ShiftDate"],
+                         EFFECT_END)[2]
+            for kind, venue, station in zip(effects["kind"], effects["venue"], effects["station"])
+        ]
+    # the four types add up to all calls (the categories sum to calls in every row)
+    assert np.allclose(effects[[f"extra_{g}" for g in TYPE_GROUPS]].sum(axis=1), effects["extra_calls"], atol=1e-6)
     effects = effects.sort_values(["clear", "extra_pct"], ascending=[False, False])
     cols = ["label", "kind", "venue", "station", "events", "usual_calls", "event_calls",
-            "extra_calls", "extra_pct", "t", "clear", "years", "chosen_on", "venue_lat", "venue_lon"]
-    effects[cols].round({"usual_calls": 2, "event_calls": 2, "extra_calls": 2, "extra_pct": 1, "t": 2}) \
+            "extra_calls", "extra_pct", "t", *[f"extra_{g}" for g in TYPE_GROUPS],
+            "clear", "years", "chosen_on", "venue_lat", "venue_lon"]
+    effects[cols].round({"usual_calls": 2, "event_calls": 2, "extra_calls": 2, "extra_pct": 1, "t": 2,
+                         **{f"extra_{g}": 2 for g in TYPE_GROUPS}}) \
         .to_csv(EFFECTS_PATH, index=False)
 
     rows = []

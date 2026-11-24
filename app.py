@@ -25,10 +25,14 @@ from station_areas import (
     load_boundary,
     recent_averages,
     selected_stations,
+    shade,
+    value_map,
 )
 from event_explore import show_event_effects
 from station_compare import (
+    CALL_TYPES,
     CITY,
+    SHARE_TYPES,
     CITY_COLOR,
     MAX_COMPARE,
     PLOT_CONFIG,
@@ -40,9 +44,13 @@ from station_compare import (
     monthly,
     monthly_chart,
     monthly_means,
+    only_type,
     station_bar_chart,
     station_color,
     station_means,
+    station_shares,
+    stacked_trend_chart,
+    type_trend,
     summary as compare_summary,
     trend,
     trend_chart,
@@ -368,9 +376,6 @@ with prediction_tab:
 with explore_tab:
     # Build comparisons from the same earlier, unmasked counts used in the Prediction tab.
     st.subheader("Patterns before the selected planning time")
-    st.caption(
-        "Same history as the Prediction tab: finished shifts only, without shifts that have missing data."
-    )
     # Say which shifts the charts use: they stop at the planning time, and dates past the
     # data all use the same, latest history.
     if not history.empty:
@@ -379,13 +384,19 @@ with explore_tab:
         # Compare with the last day of counts, not `through`: an outage shift just before the
         # planning time also makes `through` earlier, but newer data still exists.
         if target_date - pd.Timedelta(days=3) > last:
-            note += (
-                ", the last day of data. Later dates show the same history until "
-                "new calls are added."
+            # Past the data: easy to miss, so show it as a notice in this tab only (the
+            # Prediction tab uses future dates on purpose, so no pop-up there).
+            st.info(
+                f"The selected date is after the last day of data ({through:%b %d, %Y}). "
+                f"{note}, so every later date shows the same history until new calls are "
+                "added. The estimate for this date is on the Prediction tab.",
+                icon=":material/info:",
             )
         else:
-            note += ", the last shift finished by the planning time."
-        st.caption(note)
+            st.caption(
+                note + " (the last one finished by the planning time), without shifts that have "
+                "missing data."
+            )
     # Three views of the same history: the whole city (default), station areas and
     # comparisons, and past events.
     city_view, stations_view, events_view = st.tabs(["Citywide", "Stations", "Events"])
@@ -393,39 +404,73 @@ with explore_tab:
         if history.empty:
             st.info("No history is available for this selection.")
         else:
-            city = citywide(history)
+            # One choice drives the map and the charts below: all calls or one call type.
+            choice = st.segmented_control(
+                "Show calls for", list(CALL_TYPES), default="All calls", key="city_call_type"
+            ) or "All calls"
+            column, words = CALL_TYPES[choice]
             one = [CITY]
+            city = only_type(citywide(history), column)
+            # Map: each station area shaded by its average of the chosen calls per shift.
+            per_station = history.groupby("Station")[column].mean().reindex(station_ids)
+            areas, boundary = read_station_areas(stamps[0])
+            st.markdown(f"##### Average {words} per shift by station area")
+            st.pydeck_chart(
+                value_map(
+                    areas,
+                    boundary,
+                    per_station,
+                    {s: f"{v:.1f} {words} per shift" for s, v in per_station.items()},
+                ),
+                key="city_value_map",
+            )
+            top = per_station.nlargest(3)
+            st.caption(
+                f"Lighter areas have fewer {words}, darker areas more: from "
+                f"{per_station.min():.1f} ({per_station.idxmin()}) to {per_station.max():.1f} "
+                f"per shift. Most: " + ", ".join(f"{s} ({v:.1f})" for s, v in top.items())
+                + ". Point at an area for its number."
+            )
+            st.markdown(f"##### Citywide {words} per shift")
             st.caption("All 34 station areas added together, per shift (08:00 to 08:00).")
             st.dataframe(compare_summary(city, one, average=False), width="stretch")
-            st.write(f"Citywide calls per shift, last {TREND_DAYS} days (7-shift average)")
-            st.caption(
-                "Each point averages the 7 shifts up to that day, which smooths out "
-                "day-to-day swings. Look for lasting rises or drops, not single bumps."
-            )
-            st.plotly_chart(
-                trend_chart(trend(city, one, average=False)), width="stretch", config=PLOT_CONFIG
-            )
+            st.markdown(f"##### Citywide {words} per shift, last {TREND_DAYS} days (7-shift average)")
+            if choice == "All calls":
+                # All calls: stacked bands by type, so a rise shows which type caused it.
+                st.caption(
+                    "Each band is one call type; the top edge is all calls. Each point averages "
+                    "the 7 shifts up to that day. Point at the chart to see every type's number."
+                )
+                figure = stacked_trend_chart(type_trend(citywide(history)))
+            else:
+                st.caption(
+                    "Each point averages the 7 shifts up to that day, which smooths out "
+                    "day-to-day swings. Look for lasting rises or drops, not single bumps."
+                )
+                figure = trend_chart(trend(city, one, average=False))
+            st.plotly_chart(figure, width="stretch", config=PLOT_CONFIG)
             a, b = st.columns(2)
-            a.write("Average calls per shift by weekday")
+            a.markdown(f"##### Average {words} per shift by weekday")
             a.caption("Taller bars are busier days of the week.")
             a.plotly_chart(
                 weekday_chart(weekday_means(city, one, average=False)),
                 width="stretch",
                 config=PLOT_CONFIG,
             )
-            b.write("Average calls per shift by month")
+            b.markdown(f"##### Average {words} per shift by month")
             b.caption("Each point is one month since 2022: shows seasons and longer-term changes.")
             # Averaged per shift, so longer months do not win by size alone.
             zoom_safe_line_chart(b, monthly(city), "%b %Y", color=CITY_COLOR)
-            st.write("Share of calls by category")
+            st.markdown("##### Share of calls by category")
             st.caption(
-                "How the city's calls split by type. Point at a bar to see the average "
-                "number of calls per shift."
+                "How the city's calls split by type (all types, whatever is chosen above). "
+                "Point at a bar to see the average number of calls per shift."
             )
+            all_types = citywide(history)
             st.plotly_chart(
                 category_chart(
-                    category_shares(city, one, average=False),
-                    category_means(city, one, average=False),
+                    category_shares(all_types, one, average=False),
+                    category_means(all_types, one, average=False),
                 ),
                 width="stretch",
                 config=PLOT_CONFIG,
@@ -433,27 +478,48 @@ with explore_tab:
             st.caption("The Stations tab shows each station area and compares stations.")
     with stations_view:
         # Station area map: city boundary and nearest-station areas, with recent averages on hover.
-        st.write("Station areas")
+        st.markdown("##### Station areas")
         picked = []
         if not history.empty:
             areas, boundary = read_station_areas(stamps[0])
-            # The map is drawn before this run's click is read, so colour the areas picked so far
-            # (kept by Streamlit under the chart's key) with the same colours as the charts below.
+            # Shade each area by the share of its calls of one type (shares, not counts, so
+            # small and busy stations are on the same scale).
+            share_choice = st.segmented_control(
+                "Color areas by", list(SHARE_TYPES), default="Fire share", key="station_share_type"
+            ) or "Fire share"
+            share_column = SHARE_TYPES[share_choice]
+            shares, city_share = station_shares(history, share_column)
+            share_word = share_choice.split()[0]
+            hover = {s: f"{share_word} share: {v:.0f}% (city {city_share:.0f}%)" for s, v in shares.items()}
+            # The map is drawn before this run's click is read, so outline the areas picked so far
+            # (kept by Streamlit under the chart's key) in the same colours as the charts below.
             before = selected_stations(st.session_state.get("station_area_map"))[:MAX_COMPARE]
-            fills = {name: station_color(before, name, alpha=150) for name in before}
+            outlines = {name: station_color(before, name, alpha=255) for name in before}
             # Click areas to pick stations; clicking a picked area again unpicks it.
             event = st.pydeck_chart(
-                area_map(areas, boundary, stations, recent_averages(history), fills),
+                area_map(
+                    areas,
+                    boundary,
+                    stations,
+                    recent_averages(history),
+                    fills=shade(shares),
+                    picked_colors=outlines,
+                    extra=hover,
+                ),
                 on_select="rerun",
                 selection_mode="multi-object",
                 key="station_area_map",
             )
             picked = selected_stations(event)
+            high = shares.nlargest(2)
             st.caption(
-                "Each outlined area is the part of Seattle closest to that station, so its edges are "
-                "approximate. Point at an area to see its average calls per shift over the last "
-                f"week and month known at the planning time. Click up to {MAX_COMPARE} areas to "
-                "compare them; click an area again to remove it."
+                f"Darker areas have a larger share of {share_word.lower()} calls: from "
+                f"{shares.min():.0f}% to {shares.max():.0f}% (city {city_share:.0f}%). Highest: "
+                + ", ".join(f"{s} ({v:.0f}%)" for s, v in high.items())
+                + ". Each area is the part of Seattle closest to that station, so its edges are "
+                "approximate. Point at an area for its share and its average calls over the last "
+                f"week and month. Click up to {MAX_COMPARE} areas to compare them (outlined in "
+                "color); click an area again to remove it."
             )
         if len(picked) > MAX_COMPARE:
             st.warning(
@@ -470,7 +536,7 @@ with explore_tab:
                 "(grey dashed line), so it is on the same scale as one station."
             )
             st.dataframe(compare_summary(history, picked), width="stretch")
-            st.write(f"Calls per shift, last {TREND_DAYS} days (7-shift average)")
+            st.markdown(f"##### Calls per shift, last {TREND_DAYS} days (7-shift average)")
             st.caption(
                 "One line per station; the grey dashed line is the average station. Each "
                 "point averages the 7 shifts up to that day. Look for lasting rises or drops."
@@ -478,7 +544,7 @@ with explore_tab:
             st.plotly_chart(
                 trend_chart(trend(history, picked)), width="stretch", config=PLOT_CONFIG
             )
-            st.write("Average calls per shift by month (all history)")
+            st.markdown("##### Average calls per shift by month (all history)")
             st.caption(
                 "Each point is one month since 2022: shows seasons and whether a station "
                 "has become busier or quieter over the years."
@@ -486,12 +552,12 @@ with explore_tab:
             st.plotly_chart(
                 monthly_chart(monthly_means(history, picked)), width="stretch", config=PLOT_CONFIG
             )
-            st.write("Average calls per shift by weekday")
+            st.markdown("##### Average calls per shift by weekday")
             st.caption("Taller bars are busier days; compare each station with the striped average.")
             st.plotly_chart(
                 weekday_chart(weekday_means(history, picked)), width="stretch", config=PLOT_CONFIG
             )
-            st.write("Share of calls by category")
+            st.markdown("##### Share of calls by category")
             st.caption(
                 "Shares, so busy and quiet stations can be compared directly. Point at a bar "
                 "to see the average number of calls per shift too."
@@ -510,10 +576,10 @@ with explore_tab:
             )
         if not history.empty:
             # Every station at a glance, in number order; picked stations keep their colours.
-            st.write("Average calls per shift by station")
+            st.markdown("##### Average calls per shift by station")
             st.caption(
                 "One bar per station, in number order. Bars above the dashed line are busier "
-                "than the average station; picked stations are shown in their colours."
+                "than the average station; picked stations are shown in their colors."
             )
             st.plotly_chart(
                 station_bar_chart(station_means(history, station_ids), picked),

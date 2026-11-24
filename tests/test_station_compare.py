@@ -14,6 +14,7 @@ from station_areas import AREA_LAYER_ID, selected_stations
 from station_compare import (
     AVERAGE,
     BAR_COLOR,
+    CALL_TYPES,
     CITY,
     CITY_COLOR,
     COLORS,
@@ -25,9 +26,13 @@ from station_compare import (
     citywide,
     monthly,
     monthly_means,
+    only_type,
     station_bar_chart,
     station_color,
     station_means,
+    station_shares,
+    stacked_trend_chart,
+    type_trend,
     summary,
     trend,
     trend_chart,
@@ -148,6 +153,28 @@ class CompareTests(unittest.TestCase):
         self.assertIn("calls per shift", medical.hovertemplate)
         np.testing.assert_allclose(medical.customdata, means["Medical"].to_numpy())
 
+    def test_station_shares_and_call_types(self):
+        # Fire share: SoDo (SFD 14) is fire-heavy, the city is about 16%.
+        shares, city = station_shares(self.history, "fire")
+        totals = self.history.groupby("Station")[["fire", "calls"]].sum()
+        self.assertAlmostEqual(shares["SFD 14"], 100 * totals.loc["SFD 14", "fire"] / totals.loc["SFD 14", "calls"])
+        self.assertEqual(shares.idxmax(), "SFD 14")
+        self.assertAlmostEqual(city, 100 * totals.fire.sum() / totals.calls.sum())
+        # Choosing a call type makes every "calls" table count that type.
+        fire_city = only_type(citywide(self.history), "fire")
+        np.testing.assert_allclose(fire_city.calls, self.history.groupby("ShiftDate").fire.sum().to_numpy())
+        self.assertEqual(set(CALL_TYPES), {"All calls", "Medical", "Fire", "Non-emergency", "Other"})
+
+    def test_stacked_trend_adds_up_and_never_drops_to_zero(self):
+        city = citywide(self.history)
+        bands = type_trend(city)
+        total = trend(city, [CITY], average=False)[CITY]
+        np.testing.assert_allclose(bands.sum(axis=1, min_count=1), total, equal_nan=True)
+        # Days without a 7-shift average are left out of the stacked chart, not drawn as 0.
+        drawn = stacked_trend_chart(bands).data
+        self.assertTrue(all(min(t.y) > 0 for t in drawn if t.stackgroup and t.name == "Medical"))
+        self.assertFalse(any(np.isnan(np.asarray(t.y, dtype=float)).any() for t in drawn))
+
     def test_map_colours_match_the_chart_colours(self):
         self.assertEqual(station_color(PICKED, "SFD 2"), COLORS[1])
         self.assertEqual(station_color(PICKED, "SFD 10", alpha=150), [47, 93, 138, 150])
@@ -176,6 +203,42 @@ class CitywideScreenTests(unittest.TestCase):
         # With nothing picked on the map, the Stations tab points to the map.
         stations = next(t for t in app.tabs if t.label == "Stations")
         self.assertTrue(any("Click up to 3 station areas" in i.value for i in stations.info))
+
+    def test_citywide_follows_the_chosen_call_type(self):
+        import os
+
+        os.environ.setdefault("STREAMLIT_LOGGER_LEVEL", "error")
+        from streamlit.testing.v1 import AppTest
+
+        from app_data import ROOT
+
+        import json
+
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+
+        def trend_traces():
+            city = next(t for t in app.tabs if t.label == "Citywide")
+            figure = json.loads(city.get("plotly_chart")[0].proto.spec)
+            return [(t.get("name"), t.get("stackgroup")) for t in figure["data"]]
+
+        # All calls: one stacked band per call type plus the all-calls outline.
+        self.assertEqual([n for n, g in trend_traces() if g], ["Medical", "Fire", "Other", "Non-emergency"])
+        app.get("button_group")[0].set_value("Fire").run(timeout=60)
+        # One call type: a single line again.
+        self.assertEqual(trend_traces(), [(CITY, None)])
+        self.assertFalse(app.exception, [e.message for e in app.exception])
+        city = next(t for t in app.tabs if t.label == "Citywide")
+        table = city.dataframe[0].value
+        fire = known_history(load_tables()[1], "2026-10-24").groupby("ShiftDate").fire.sum()
+        self.assertAlmostEqual(table.loc[CITY, "All history"], round(fire.mean(), 1))
+        titles = " ".join(m.value for m in city.markdown)
+        self.assertIn("Average fire calls per shift by station area", titles)
+        caption = next(c.value for c in city.caption if c.value.startswith("Lighter"))
+        self.assertIn("SFD 10 (6.5)", caption)  # the most fire calls per shift
+        # The Stations map is shaded by fire share; SoDo (SFD 14) has the highest.
+        stations = next(t for t in app.tabs if t.label == "Stations")
+        share_note = next(c.value for c in stations.caption if c.value.startswith("Darker"))
+        self.assertIn("Highest: SFD 14 (27%)", share_note)
 
 
 class SelectionTests(unittest.TestCase):

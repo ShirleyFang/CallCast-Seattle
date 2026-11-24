@@ -24,7 +24,10 @@ from station_areas import (
     area_km2,
     build_station_areas,
     load_boundary,
+    picked_outline_layers,
     recent_averages,
+    shade,
+    value_map,
 )
 
 
@@ -58,6 +61,20 @@ class StationAreaTests(unittest.TestCase):
         self.assertAlmostEqual(area_km2(self.boundary), area_km2(raw), delta=0.001)
         spike_tip = Point(raw.exterior.coords[2])
         self.assertGreater(self.boundary.exterior.distance(spike_tip), 0.001)  # ~200 m in degrees
+
+    def test_shading_runs_from_light_to_dark(self):
+        fills = shade({"low": 1.0, "mid": 5.0, "high": 9.0})
+        brightness = {k: sum(v[:3]) for k, v in fills.items()}
+        self.assertGreater(brightness["low"], brightness["mid"])
+        self.assertGreater(brightness["mid"], brightness["high"])
+        # The citywide map is view only and colours every area; picked stations elsewhere get
+        # a halo and a coloured outline.
+        values = pd.Series({name: float(i) for i, name in enumerate(self.areas)})
+        spec = json.loads(value_map(self.areas, self.boundary, values, {}).to_json())
+        areas_layer = next(l for l in spec["layers"] if l["id"] == "city-value-areas")
+        self.assertEqual(len(areas_layer["data"]["features"]), 34)
+        outlines = picked_outline_layers(self.areas, {"SFD 10": [47, 93, 138, 255]})
+        self.assertEqual([layer.id for layer in outlines], ["picked-halo", "picked-outline"])
 
     def test_areas_do_not_overlap(self):
         names = list(self.areas)
@@ -106,9 +123,11 @@ class StationAreaTests(unittest.TestCase):
 
 class StationAreaScreenTests(unittest.TestCase):
     def area_map(self, app):
+        # The Stations map is the one with the clickable station-areas layer (Citywide and
+        # Events have their own maps).
         for chart in app.get("deck_gl_json_chart"):
             spec = json.loads(chart.proto.json)
-            if any(layer["@@type"] == "GeoJsonLayer" for layer in spec["layers"]):
+            if any(layer.get("id") == "station-areas" for layer in spec["layers"]):
                 return spec
         return None
 
@@ -140,6 +159,7 @@ class StationAreaScreenTests(unittest.TestCase):
             allowed = {
                 "station-dots": {"getPosition": "@@=[lon, lat]"},
                 "station-areas": {"getFillColor": "@@=properties.fill"},
+                "picked-outline": {"getLineColor": "@@=properties.line"},
             }.get(layer["id"], {})
             self.assertEqual(expressions, allowed, layer["@@type"])
             if layer["@@type"] == "GeoJsonLayer":
