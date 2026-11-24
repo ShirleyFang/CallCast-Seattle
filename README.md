@@ -42,7 +42,7 @@ The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is 
 | Step 12              | `scripts/evaluate_calendar_features.py`                 | `data/modeling_dataset.csv` → rolling-CV scores with extra calendar features (printed)                                 |
 | Step 13              | `scripts/fetch_events.py`, `scripts/fetch_concerts.py`  | public schedules → `data/events.csv` (home games), `data/concerts.csv` (concerts)                                      |
 | Step 14              | `scripts/evaluate_events.py`                            | `data/modeling_dataset.csv` + event schedules → event effects and rolling-CV scores (printed)                          |
-| Step 15 Model tuning | `scripts/tune_model.py`, `scripts/grid_search_model.py` | Compare baseline and special-day features, perform grid search using 2025 rolling CV, and save `results/tuning_cv.csv` |
+| Step 16 Model tuning | `scripts/tune_model.py`, `scripts/grid_search_model.py` | Compare baseline and special-day features, perform grid search using 2025 rolling CV, and save `results/tuning_cv.csv` |
 
 Scripts run from the repository root (`uv run python scripts/<name>.py`). Notebooks live in `notebooks/` and read files with `../data/`.
 `scripts/cv_utils.py` holds the folds, features and metrics shared by the evaluation steps (6, 9, 11–14). `scripts/feature_sets.py` holds the baseline feature list and the candidate features for Steps 11–14.
@@ -115,7 +115,23 @@ This generates:
 - `models/poisson_gbm.joblib`: the trained model, feature column order, preprocessing information, and station × weekday averages.
 - `model_metadata.json`: the model name, training cutoff, raw input columns, derived special-day features, and missing-value support required by the Streamlit app.
 
-The model uses the best-performing configuration from the 2025 rolling-CV grid search: learning_rate=0.1, max_iter=200, max_leaf_nodes=31, and l2_regularization=0.0.
+The final model uses the following hyperparameters, selected through coarse and fine grid search with four quarterly rolling-CV folds over 2025:
+
+- `learning_rate=0.1`
+- `max_iter=300`
+- `max_leaf_nodes=23`
+- `min_samples_leaf=10`
+- `l2_regularization=0.0`
+- `early_stopping=True`
+- `validation_fraction=0.1`
+- `n_iter_no_change=10`
+- `random_state=0`
+
+Early stopping determines the actual number of boosting iterations, so `max_iter=300` is an upper limit.
+
+The selected configuration achieved a citywide MAE of 18.730 across three random seeds and four CV folds, compared with 18.842 for the original configuration under the same evaluation. It was selected as the best-performing configuration in the expanded fine search, with a lower maximum number of leaf nodes (23 vs. 31).
+
+The original configuration also achieved 18.727 in the earlier single-seed evaluation. Since these results use different seed settings and the differences are small relative to seed variability, we do not claim a substantial or statistically significant improvement from hyperparameter tuning.
 
 Forecast weather and event adjustments are not included in the deployed model. The tuned model has not yet been evaluated on the 2026 test set.
 
