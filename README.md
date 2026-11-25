@@ -369,7 +369,7 @@ The app plans the way a supervisor would: on Thursday at 08:00 for Saturday's sh
 Tests:
 
 ```bash
-uv run python -m unittest discover -s tests -t . -v
+uv run python -m unittest discover -s tests -v
 ```
 
 [docs/APP_WALKTHROUGH.md](docs/APP_WALKTHROUGH.md) goes through the app screen by screen.

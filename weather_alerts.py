@@ -11,7 +11,7 @@ Which forecast is used, so the alert matches what was known at the planning time
     previous_runs  later shifts whose planning time has passed: the archived GFS day-3 forecast
     live           planning time still ahead and the shift within ALERT_DAYS: the latest forecast
 Thresholds and their check: README Step 15 (a) and (e), scripts/check_alert_thresholds.py.
-With CALLCAST_OFFLINE=1 (set in tests/__init__.py) nothing is downloaded: those shifts show "unavailable".
+With CALLCAST_OFFLINE=1 (set by the tests) nothing is downloaded: those shifts show "unavailable".
 """
 import os
 import sys

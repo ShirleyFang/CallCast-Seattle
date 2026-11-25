@@ -1,7 +1,7 @@
 """Explore > Weather data tests: the saved weather effects (scripts/make_weather_effects.py)
 are complete, add up, use 2022-2025 only, and the past events show in ERA5.
 
-Run: uv run python -m unittest discover -s tests -t . -v
+Run: uv run python -m unittest discover -s tests -v
 """
 
 import unittest

@@ -1,7 +1,7 @@
 """The weather parts of the app: the alert under the estimate on the Prediction tab, and the
-Explore > Weather sub-tab. Nothing is downloaded (CALLCAST_OFFLINE, set in tests/__init__.py).
+Explore > Weather sub-tab. Nothing is downloaded (CALLCAST_OFFLINE).
 
-Run: uv run python -m unittest discover -s tests -t . -v
+Run: uv run python -m unittest discover -s tests -v
 """
 
 import os
@@ -10,6 +10,7 @@ from datetime import date
 from unittest import mock
 
 os.environ.setdefault("STREAMLIT_LOGGER_LEVEL", "error")
+os.environ.setdefault("CALLCAST_OFFLINE", "1")  # also in tests/__init__.py
 
 from streamlit.testing.v1 import AppTest  # noqa: E402
 

@@ -1,9 +1,10 @@
 """Weather alerts on the Prediction tab: which forecast is used, the thresholds, and the wording.
 Every forecast here is made up; nothing is downloaded.
 
-Run: uv run python -m unittest discover -s tests -t . -v
+Run: uv run python -m unittest discover -s tests -v
 """
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,8 +12,11 @@ from unittest import mock
 
 import pandas as pd
 
-import weather_alerts
-from weather_alerts import MESSAGES, get_weather_alerts
+# also set in tests/__init__.py; here too, since discover -s tests does not load that file
+os.environ.setdefault("CALLCAST_OFFLINE", "1")
+
+import weather_alerts  # noqa: E402
+from weather_alerts import MESSAGES, get_weather_alerts  # noqa: E402
 
 TZ = "America/Los_Angeles"
 
