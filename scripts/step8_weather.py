@@ -26,6 +26,8 @@ import sys
 import pandas as pd
 import requests
 
+from weather_utils import to_shifts
+
 
 # constant
 MIN_LAG = 3                    # keep the same as scripts/step4_features.py
@@ -81,35 +83,6 @@ era5 = download(ARCHIVE_URL, ERA5_CACHE, REANALYSIS_MODEL, VARIABLES, str(first_
 fc = download(PREVIOUS_RUNS_URL, FORECAST_CACHE, FORECAST_MODEL,
               [f'{v}_previous_day{FORECAST_DAY}' for v in VARIABLES], FORECAST_START)
 fc = fc.rename(columns={f'{v}_previous_day{FORECAST_DAY}': v for v in VARIABLES})
-
-
-def to_shifts(hourly, prefix):
-    """Aggregate hourly UTC weather to 08:00–08:00 Seattle shifts."""
-    h = hourly.set_index('time')
-    # precipitation, snowfall and gusts are totals/maxima over the hour BEFORE the timestamp,
-    # so label them by the hour they start; temperature is the value at the timestamp
-    period = h[['precipitation', 'snowfall', 'wind_gusts_10m']].shift(-1, freq='h')
-    weather = period.join(h['temperature_2m'], how='outer')
-    # same rule as cleaning: local wall-clock time minus 8 h (DST days have 23 or 25 hours)
-    local = weather.index.tz_localize('UTC').tz_convert('America/Los_Angeles').tz_localize(None)
-    shift = (local - pd.Timedelta(hours=8)).normalize()
-    g = weather.groupby(shift)
-    out = pd.DataFrame({
-        'precip_sum': g['precipitation'].sum(min_count=1),     # mm
-        'precip_max_hr': g['precipitation'].max(),            # mm in one hour
-        'snow_sum': g['snowfall'].sum(min_count=1),           # cm
-        'temp_max': g['temperature_2m'].max(),                # °C
-        'temp_min': g['temperature_2m'].min(),                # °C
-        'gust_max': g['wind_gusts_10m'].max(),                # km/h
-    })
-    # a shift counts only if every hour is there (e.g. forecast archive starts mid-shift)
-    complete = g.count().eq(g.size(), axis=0)
-    for col, var in [('precip_sum', 'precipitation'), ('precip_max_hr', 'precipitation'),
-                     ('snow_sum', 'snowfall'), ('temp_max', 'temperature_2m'),
-                     ('temp_min', 'temperature_2m'), ('gust_max', 'wind_gusts_10m')]:
-        out[col] = out[col].where(complete[var])
-    out.index.name = 'ShiftDate'
-    return out.add_prefix(prefix)
 
 
 # 3. aggregate to shifts and join on ShiftDate (weather is the same for every station)
