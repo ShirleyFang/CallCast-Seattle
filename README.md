@@ -30,7 +30,7 @@ The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is 
 | Step 2       | `scripts/step2_sec2.py`             | `station_shift_counts.csv` → target distribution and histogram (proposal Section 2)                       |
 | Step 3       | `scripts/step3_baseline.py`         | `station_shift_counts.csv` → baseline scores (proposal Section 3)                                         |
 | Lag analysis | `notebooks/lag_analysis.ipynb`      | `station_shift_counts.csv` → choice of recent-call features                                               |
-| Step 4       | `scripts/step4_features.py`         | `station_shift_counts.csv` → `data/modeling_dataset.csv`                                                  |
+| Step 4       | `scripts/step4_features.py`         | `station_shift_counts.csv` → `data/modeling_dataset.csv`, `data/forecast_features.csv` (90 days ahead), `data/lag_fill_means.csv` |
 | Step 5       | `scripts/check_modeling_dataset.py` | `data/modeling_dataset.csv` → sanity checks (printed)                                                     |
 | Step 6       | `scripts/evaluate_models.py`        | `data/modeling_dataset.csv` → rolling-CV scores of baselines and first-pass models (printed)              |
 | Step 7       | `scripts/train_model.py`            | `data/modeling_dataset.csv` → trained Poisson GBM (`models/poisson_gbm.joblib`) and `model_metadata.json` |
@@ -43,6 +43,7 @@ The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is 
 | Step 12      | `scripts/evaluate_calendar_features.py` | `data/modeling_dataset.csv` → rolling-CV scores with extra calendar features (printed)                |
 | Step 13      | `scripts/fetch_events.py`, `scripts/fetch_concerts.py` | public schedules → `data/events.csv` (home games), `data/concerts.csv` (concerts)      |
 | Step 14      | `scripts/evaluate_events.py`        | `data/modeling_dataset.csv` + event schedules → event effects and rolling-CV scores (printed)             |
+| Event effects | `scripts/make_event_effects.py`    | `data/modeling_dataset.csv`, `data/station_shift_counts.csv` + event schedules → `data/event_effects.csv`, `data/event_shifts.csv` (the app's Explore Events tables) |
 | Step 15      | `scripts/step15_weather_extremes.py` | `data/modeling_dataset_weather.csv` → forecast skill, effect size and CV for rare extreme weather (printed) |
 | Step 16      | `scripts/tune_model.py`, `scripts/grid_search_model.py` | Compare baseline and special-day features, perform grid search using 2025 rolling CV, and save `results/tuning_cv.csv` |
 
@@ -88,7 +89,7 @@ Lag plots, autocorrelation and partial autocorrelation of calls per shift, on th
 - **Outages:** outage shifts are left out of the lag calculations, and their rows are dropped afterwards.
 - **Missing values:** the lags are empty for the first weeks of 2022 and next to outages. Tree models handle this as is; linear models need those rows dropped.
 - **Left out:** the group counts (`fire`, `medical`, ...), since they add up to the target.
-- **Forecast rows:** the same features are also built for the 3 shifts after the last known shift, with calls empty, and saved to data/forecast_features.csv for the app. The forecast dates are determined automatically from the latest available shift in the dataset. Past shifts are read from modeling_dataset.csv.
+- **Forecast rows:** the script also writes the 90 shifts after the last known shift (`FORECAST_DAYS`), with calls empty, to data/forecast_features.csv for the app. The forecast dates are determined automatically from the latest available shift in the dataset. The first 3 keep their real lag features. Later shifts have no recent calls, so each lag feature is its own mean over known shifts with the same station, weekday and month (a station × weekday mean if a cell has fewer than 8 shifts), saved in `data/lag_fill_means.csv`. In a backtest this beat the plain weekday average up to about 180 days ahead (90-day citywide MAE 19.95 against 20.69), so the app stops at 90 days. Past shifts are read from modeling_dataset.csv.
 - **Splits:** none in the file. Use rolling cross-validation split by `ShiftDate`
 - **Why a script:** cleaning reads the 289 MB raw file, while this step reads the 2 MB table, so features can be changed and rebuilt in seconds with one command.
 
@@ -117,7 +118,23 @@ This generates:
 - `models/poisson_gbm.joblib`: the trained model, feature column order, preprocessing information, and station × weekday averages.
 - `model_metadata.json`: the model name, training cutoff, raw input columns, derived special-day features, and missing-value support required by the Streamlit app.
 
-The model uses the best-performing configuration from the 2025 rolling-CV grid search: learning_rate=0.1, max_iter=200, max_leaf_nodes=31, and l2_regularization=0.0.
+The final model uses the following hyperparameters, selected through coarse and fine grid search with four quarterly rolling-CV folds over 2025:
+
+- `learning_rate=0.1`
+- `max_iter=300`
+- `max_leaf_nodes=23`
+- `min_samples_leaf=10`
+- `l2_regularization=0.0`
+- `early_stopping=True`
+- `validation_fraction=0.1`
+- `n_iter_no_change=10`
+- `random_state=0`
+
+Early stopping determines the actual number of boosting iterations, so `max_iter=300` is an upper limit.
+
+The selected configuration achieved a citywide MAE of 18.730 across three random seeds and four CV folds, compared with 18.842 for the original configuration under the same evaluation. It was selected as the best-performing configuration in the expanded fine search, with a lower maximum number of leaf nodes (23 vs. 31).
+
+The original configuration also achieved 18.727 in the earlier single-seed evaluation. Since these results use different seed settings and the differences are small relative to seed variability, we do not claim a substantial or statistically significant improvement from hyperparameter tuning.
 
 Forecast weather and event adjustments are not included in the deployed model. The tuned model has not yet been evaluated on the 2026 test set.
 
@@ -173,7 +190,7 @@ The prediction function uses `ShiftDate` to generate the three special-day featu
 
 The function returns a DataFrame with `Station` and `predicted_calls`.
 
-The interface has been tested with all 34 stations and successfully integrated with the Streamlit app, including the 3 forecast shifts from `data/forecast_features.csv`.
+The interface has been tested with all 34 stations and successfully integrated with the Streamlit app, including the 90 forecast shifts from `data/forecast_features.csv`.
 
 ### Likely range (`scripts/prediction_ranges.py`)
 
@@ -190,9 +207,9 @@ Measures how far the Poisson GBM's forecasts were from the real calls in 2025 an
 
 Coverage on the shifts the ranges were made from: stations 79.7%, citywide 79.7%.
 
-Coverage out of sample (ranges from folds 1 to 3, counted on fold 4): stations 78.6% (every size band 73% to 79%), citywide 71.7%. The citywide range is a little narrow for the last quarter (92 shifts), so read the city's "about 4 in 5" as about 7 in 10.
+Coverage out of sample (ranges from folds 1 to 3, counted on fold 4): stations 78.6% (every size band 73% to 79%), citywide 71.7%. The citywide range is a little narrow for the last quarter (92 shifts), so the app says "about 4 in 5" for stations and "about 7 in 10" for the citywide total.
 
-Limits: the ranges describe a forecast made 3 shifts ahead from the retuned model. Each 2025 fold forecasts 0 to 3 months after its training stops, but the app serves dates up to 10 months after the model's training ends. For October 2026 the citywide range probably holds less often than 7 in 10. Run the script again after retraining the model.
+Limits: the ranges describe a forecast made 3 shifts ahead from the retuned model. Each 2025 fold forecasts 0 to 3 months after its training stops, but the app serves dates up to about 13 months after the model's training ends (January 26, 2027). For October 2026 the citywide range probably holds less often than 7 in 10. Long-range dates (from the 4th forecast shift on) use typical lag values instead of real recent calls, and the ranges were not measured on such forecasts, so they probably hold less often there too. Run the script again after retraining the model.
 
 ### Step 8: Weather features (`scripts/step8_weather.py`)
 
@@ -217,7 +234,7 @@ Runs the same model as Step 6 (Poisson GBM, no tuning, `year` left out) with the
 | C′3     | forecast, from 2024-01-21, 3 features | forecast, 3 features    | 2.418       | 3.335        | 19.12 (+0.18)       |
 | A′      | none, from 2024-01-21                 | none                    | 2.417       | 3.326        | 19.18 (+0.23)       |
 
-Means over the 4 folds of 2025, on the baseline features (adding the proposed special days, A would be 18.73). The 3 features are `precip_sum`, `snow_sum` and `temp_min`. C-cal maps the forecast to the ERA5 scale with quantile mapping, fitted in each fold only on training shifts that have both (2024-01-21 to the training cutoff). An assert checks that no validation shift is used. Fold 1 has only 21 such shifts with snowfall, so its snowfall is left uncalibrated.
+Means over the 4 folds of 2025, on the baseline features. The special days are now in the final model (Step 7) but not in these comparisons; with them, A would be 18.73. The 3 features are `precip_sum`, `snow_sum` and `temp_min`. C-cal maps the forecast to the ERA5 scale with quantile mapping, fitted in each fold only on training shifts that have both (2024-01-21 to the training cutoff). An assert checks that no validation shift is used. Fold 1 has only 21 such shifts with snowfall, so its snowfall is left uncalibrated.
 
 - **Main result:** weather that is known when the forecast is made does not improve the model. Every forecast version (C, C-cal, C′, C′3) has a citywide MAE at or above A. At the station level all versions are within 0.04 calls, since the weather is one value for the whole city. Even perfect weather (B, B3) lowers citywide MAE by only 0.4–0.6, and only in 2 of the 4 folds. The differences between folds are larger (17.6–20.8).
 - **Forecast vs. actual weather:** training on ERA5 and validating on the forecast (C) is the worst version, because GFS is drier and less windy than ERA5. Calibration removes most of the bias (gusts −4.1 → +0.3 km/h, minimum temperature −1.0 → +0.2 °C on 2025 shifts) and most of the loss (+1.93 → +0.22), but it still does not beat A.
@@ -296,7 +313,7 @@ Adds history features built from the call data, each using only shifts at least 
 Step 9 found that weather matters only on rare extreme shifts. This step looks at them directly: strong wind (ERA5 `gust_max` ≥ 70 km/h), freezing (`temp_min` ≤ 0 °C) and snow (`snow_sum` ≥ 1 cm). It uses the same folds, training gap, metrics and untuned Poisson GBM as Steps 6 and 9, on the baseline features (A = 18.95), and drops 2026. As in Step 9, the baseline features are `BASELINE_NUMERIC` from `scripts/feature_sets.py`, checked by an assert in the script and by `tests/test_baseline.py`. All thresholds were fixed before looking at results. The forecast strong-wind threshold is 65 km/h, because GFS gusts are about 4 km/h weaker than ERA5 (Step 8); the hit/miss counts below were not used to choose it. Back-to-back extreme shifts count as one event.
 
 - **(a) Can the forecast see it?** From 2024-01-21 to 2025 (706 shifts): a forecast gust ≥ 65 catches 6 of the 10 ERA5 strong-wind shifts, and 8 of its 14 warnings are false alarms. Freezing is easy (19 of 20 caught, 13 false alarms). Snow ≥ 1 cm is never forecast: 0 of 4 caught.
-- **(b) Effect size:** calls compared with usual (same weekday ±4 weeks, non-extreme shifts), 2022–2025, with a 95% interval from resampling whole events. Strong wind: +12.2% (+7.5% to +18.5%; 17 shifts, 15 events). Freezing: +11.4% (+1.6% to +24.8%; 54 shifts but only 18 events). Snow: +3.8% (−0.9% to +8.9%; 20 shifts, 15 events), no clear effect. Some strong-wind shifts fall near holidays (2025-10-31 Halloween, 2022-12-27 after Christmas), so part of the wind effect may be a holiday effect. The extra calls are mostly at SFD 2, 39 and 24.
+- **(b) Effect size:** calls compared with usual (same weekday ±4 weeks, non-extreme shifts), 2022–2025, with a 95% interval from resampling whole events. Strong wind: +12.2% (+7.5% to +18.5%; 17 shifts, 15 events). Freezing: +11.4% (+1.6% to +24.8%; 54 shifts but only 18 events). Two checks fixed in advance: a stricter −2 °C threshold gives +25% (+4% to +43%; 23 shifts, 9 events), and shifts in cold spells of 2+ freezing shifts give +12% (48 shifts, 12 events) against +5% for single freezing shifts (6 shifts), so colder and longer spells look stronger, but the samples are small. Snow: +3.8% (−0.9% to +8.9%; 20 shifts, 15 events), no clear effect. Some strong-wind shifts fall near holidays (2025-10-31 Halloween, 2022-12-27 after Christmas), so part of the wind effect may be a holiday effect. The extra calls are mostly at SFD 2, 39 and 24.
 - **(c) Ways to use it**, 2025 rolling CV (means over the 4 folds; the last two columns are citywide MAE on 2025 subsets):
 
 | Version | What it does                                                            | Station MAE | Citywide MAE (vs A) | Strong wind, ERA5 (7 shifts) | Strong-wind forecast (9 shifts) |
@@ -316,7 +333,7 @@ R scales the no-weather prediction when the forecast says strong wind. In each f
 - **Why the flags fail:** most of the damage comes from the freezing flag. On 2025's freezing shifts, F over-predicts by 39 calls citywide (MAE 24.3 → 54.2). The ERA5 freezing shifts in training include the late-December 2022 cold spell, which coincided with the Christmas peak (646 calls on 2022-12-23), so the model most likely learned that freezing means far more calls. Weighting the extreme shifts makes it worse.
 - **Sample size:** 2025 has only 7 strong-wind shifts (5 events), 6 of them in fold 4. Folds 2 and 3 have no strong-wind forecast, so R equals A there. Freezing has 19 shifts but 4 events, snow 4 shifts. These are case studies, not statistics; the script prints each 2025 strong-wind shift with the actual and predicted citywide calls.
 - **(d) More history:** ERA5 has 106 strong-wind shifts (82 events) in 2003–2019, 6.2 per year against 4.2 in 2022–2025, so about 6 times more events (2020–21 left out). This is not suitable for retraining: call coding changed several times between 2014 and 2022, so older counts are not on the same scale as 2022 onward. The older years could firm up the effect estimate, since a ratio to the surrounding weeks is less sensitive to slow coding changes, but that needs the raw export and would not fix the forecast's false alarms. Only the yearly counts are saved (`data/era5_strong_wind_counts_2003_2019.csv`).
-- **Recommendation:** keep weather out of the model. In the app, a strong-wind forecast can at most show this note, without changing the predicted numbers: "Strong wind is forecast for this shift. In past windstorms, calls were about 10% higher. Forecasts 3 days ahead often change, so the numbers above are not adjusted." The note says about 10% rather than the measured +12.2% to stay conservative, since the 95% interval is wide (+7.5% to +18.5%). The app is for supervisors, so the note leaves out model-evaluation details (per the professor's feedback).
+- **Recommendation:** keep weather out of the model. In the app, a strong-wind forecast can at most show this note, without changing the predicted numbers: "Strong wind is forecast for this shift. Windstorms usually bring more calls than usual. Forecasts 3 days ahead often change, so the numbers above are not adjusted." The note gives no percentage, following the team's decision that app alerts stay qualitative. The measured effect is in (b) above. The app is for supervisors, so the note leaves out model-evaluation details (per the professor's feedback).
 
 ## Streamlit app
 
@@ -328,13 +345,15 @@ uv run streamlit run app.py
 The app only needs the CSVs already in `data/`, not the raw 911 export. Pick a shift date and a station to see:
 
 - expected calls for each station and the citywide total
-- a likely range next to each estimate (about 4 in 5 similar past shifts landed inside it)
+- a likely range next to each estimate (about 4 in 5 similar station shifts and about 7 in 10 citywide totals landed inside it)
 - a station map and a ranked table you can download as CSV
-- that station's past calls, weekday and monthly averages, and call types
+- that station's past calls up to the planning time
+- an event warning for SFD 10 (Seahawks home games, stadium concerts at Lumen Field) and SFD 22 (Husky football home games); it is a note only and does not change the estimate (`event_warnings.py`)
+- an Explore tab with three sub-tabs: Citywide (station-area map, last 90 days, weekday, month and call type), Stations (click up to 3 station areas to compare them with the average station) and Events (how calls changed near the venues on past event days, 2022 to 2025). Code: `station_areas.py`, `station_compare.py`, `event_explore.py`; the Events tables come from `scripts/make_event_effects.py`
 
 The app has one forecast, from the saved Poisson GBM through `predict.py`. The model is loaded once from `models/poisson_gbm.joblib`, with its configuration and training cutoff defined in `model_metadata.json`. The "Usual for this weekday" column is each station's average for the same weekday in earlier shifts, shown next to the forecast for comparison.
 
-The app shows every date from the model's first usable date (January 3, 2026) to the last day of counts, then the 3 forecast shifts after it (October 29 to 31), labelled Forecast. Weather inputs are not used.
+How far ahead: the app shows every date from the model's first usable date (January 3, 2026) to the last row of `data/forecast_features.csv`, 90 days after the last day of counts (January 26, 2027); the sidebar says "Estimates are available up to Jan 26, 2027." Every date after the counts is labelled Forecast. The first 3 (October 29 to 31) use real recent calls. From November 1 the heading adds "long-range estimate", because the five lag inputs (`lag3`, `lag7`, `avg7`, `avg28`, `same_weekday_avg4`) are typical values from `data/lag_fill_means.csv` (Step 4). A later date gets "No estimate for this date yet" instead of an error. The model is not retrained. Weather inputs are not used.
 
 The app passes the selected shift date to `predict.py` so the special-day flags (New Year's Eve, the day after Thanksgiving, December 24 to 26) are built from it automatically.
 

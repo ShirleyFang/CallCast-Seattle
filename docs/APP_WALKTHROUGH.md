@@ -23,8 +23,10 @@ The app has three tabs:
 
 1. **Prediction** - choose a date and station, see point estimates and ranges,
    view the map and download the table.
-2. **Explore** - compare past weekday, monthly, station and call-category
-   patterns.
+2. **Explore** - three sub-tabs of past patterns: **Citywide** (map, last 90
+   days, weekday, month and call type), **Stations** (station-area map; click
+   up to 3 areas to compare them) and **Events** (how calls changed near the
+   venues on past event days).
 3. **Data and limits** - read the source, definitions, left-out data and
    limitations.
 
@@ -116,8 +118,11 @@ The three-day subtraction is not an arbitrary safety rule. The model uses
 features starting at `lag3`, and lags 1 and 2 would contain shifts not
 finished at the Thursday morning planning time.
 
-The date picker starts at January 3, 2026. It ends at the latest forecast
-date, currently October 31, 2026.
+The date picker starts at January 3, 2026. It ends at the last row of
+`forecast_features.csv`, 90 days after the last day of counts: currently
+January 26, 2027. The sidebar says so under the picker: "Estimates are
+available up to Jan 26, 2027." If a later date reaches `learned_predictions()`,
+it answers "No estimate for this date yet: estimates go up to Jan 26, 2027."
 
 Thirteen historical shifts have missing model-input rows:
 January 9; March 20; April 23; May 7; June 13; July 17, 19, 20, 22, 24 and
@@ -137,12 +142,12 @@ Leave the date at October 24 and the station at SFD 10. The page calculates:
 
 | Card or column | Value | Meaning |
 |---|---:|---|
-| Citywide expected calls | 313.6 | Sum of 34 station point estimates |
-| SFD 10 expected calls | 39.3 | Fitted GBM estimate for SFD 10 |
+| Citywide expected calls | 312.8 | Sum of 34 station point estimates |
+| SFD 10 expected calls | 40.0 | Fitted GBM estimate for SFD 10 |
 | SFD 10 Usual | 38.9 | Earlier Saturday average for SFD 10 |
-| SFD 10 Difference | +0.3 | 39.3 minus 38.9 |
+| SFD 10 Difference | +1.1 | 40.0 minus 38.9 |
 | Citywide Usual | 306.4 | Sum of all 34 station weekday averages |
-| Citywide Difference | +7.1 | 313.6 minus 306.4 |
+| Citywide Difference | +6.3 | 312.8 minus 306.4 |
 
 The card values use rounded display numbers. The citywide difference is
 calculated from the full, unrounded station sums, even though it is shown
@@ -263,10 +268,10 @@ calculates all 34 stations on every prediction.
 
 Switching to SFD 2:
 
-* changes SFD 10's 39.3 estimate to SFD 2's 32.1 estimate,
+* changes SFD 10's 40.0 estimate to SFD 2's 31.7 estimate,
 * changes the right card and table selection,
 * changes the selected station history and category chart,
-* leaves the citywide card at 313.6.
+* leaves the citywide card at 312.8.
 
 The citywide estimate is the sum:
 
@@ -280,7 +285,7 @@ Citywide = station 2 estimate
 The app also adds selected station differences using the usual value:
 
 ```text
-SFD 2 difference = 32.1 - 32.5 = -0.4
+SFD 2 difference = 31.7 - 32.5 = -0.8
 ```
 
 ## 8. The map
@@ -350,10 +355,10 @@ The station bands are:
 | Predicted calls | Low offset | High offset |
 |---:|---:|---:|
 | 0–5 | -2.4 | +2.7 |
-| 5–10 | -3.5 | +3.7 |
-| 10–20 | -4.7 | +4.9 |
-| 20–40 | -7.3 | +8.3 |
-| Over 40 | -9.1 | +10.0 |
+| 5–10 | -3.5 | +3.8 |
+| 10–20 | -4.7 | +4.8 |
+| 20–40 | -7.3 | +8.2 |
+| Over 40 | -8.9 | +9.9 |
 
 For a station estimate, `add_likely_range()`:
 
@@ -367,35 +372,35 @@ It rounds to whole calls and prevents a negative low value.
 For SFD 10:
 
 ```text
-39.3 is in the 20–40 band
-low = 39.3 - 7.3 = 32
-high = 39.3 + 8.3 = 48
+40.02 is in the over-40 band
+low = 40.02 - 8.9 = 31.1 -> 31
+high = 40.02 + 9.9 = 49.9 -> 50
 ```
 
 For the citywide estimate:
 
 ```text
-313.6 + (-30.0) = 283.6 -> 284
-313.6 + 32.5 = 346.1 -> 346
+312.8 + (-29.6) = 283.2 -> 283
+312.8 + 32.0 = 344.8 -> 345
 ```
 
 The city range is stored as one citywide offset in
 [`prediction_ranges.csv`](../data/prediction_ranges.csv):
 
 ```text
--30.0 to +32.5
+-29.6 to +32.0
 ```
 
 Coverage on the 2025 shifts used to make the ranges was:
 
-* stations: 79.8%
-* citywide: 79.5%
+* stations: 79.7%
+* citywide: 79.7%
 
 A holdout check, using ranges made from folds 1–3 and tested on fold 4,
 was:
 
-* stations: 78.8%
-* citywide: 70.7%
+* stations: 78.6%
+* citywide: 71.7%
 
 The 10th-to-90th percentile range means that about 80% of comparable past
 station shifts landed inside it. The citywide holdout coverage was about
@@ -493,56 +498,46 @@ and it does not change the citywide total.
 
 ## 14. Explore tab
 
-![Weekday and monthly charts](walkthrough_images/06_explore_history.jpg)
-
 The Explore tab uses the same `known_history()` result as the Prediction tab.
-It does not include future shifts, future counts or masked outage shifts.
+It does not include future shifts, future counts or masked outage shifts. A
+note at the top says which shifts it uses. For a date more than 3 days past
+the last counts, the note becomes a blue info box: every later date shows the
+same history until new calls are added.
 
-### Weekday chart
+Explore has three sub-tabs. Every chart has a one-line caption on how to read
+it.
 
-The chart averages past calls for Monday through Sunday for the selected
-station:
+### Citywide
 
-```text
-station weekday average
-= sum of station calls on that weekday
-/ usable station shifts on that weekday
-```
+* "Show calls for" picks All calls, Medical, Fire, Non-emergency or Other. The
+  choice drives the map and the charts below it.
+* A map shades each station area by its average calls per shift.
+* A one-row table gives the citywide last week, last month, all history and
+  busiest weekday.
+* The last-90-days chart is a 7-shift average. For All calls it is stacked by
+  call type.
+* Weekday and monthly charts are averages per shift, so a longer month is not
+  larger by size alone.
+* The category chart shows how the city's calls split by type.
 
-### Monthly chart
+### Stations
 
-The monthly chart averages calls per usable shift within a year-month:
+* The station-area map shows the part of Seattle closest to each station,
+  inside the city boundary (`station_areas.py`). Areas are shaded by fire,
+  medical or other share, and hovering shows last week and last month.
+* Clicking up to 3 areas compares them with the average station (citywide
+  calls divided by 34): summary table, last 90 days, monthly, weekday and
+  category share charts (`station_compare.py`).
+* A bar chart shows every station's average in number order.
 
-```text
-station-month average
-= sum of station calls in that year-month
-/ usable station shifts in that year-month
-```
+### Events
 
-The chart does not sum a whole month. It uses the shift count, so a longer
-month is not automatically larger.
-
-![Station comparison and categories](walkthrough_images/07_station_categories.jpg)
-
-### Station comparison
-
-The station chart averages `calls` for every station across the same
-planning-time history.
-
-It stays the same when the station menu changes.
-
-### Call category chart
-
-The selected station's four category averages come from:
-
-* `fire`,
-* `medical`,
-* `non_emergency`,
-* `other`.
-
-They sum to the selected station's average `calls`. They are for browsing
-past incident mix only. The current model uses total calls, not separate
-category targets.
+A venue map and tables of how calls changed near Lumen Field, T-Mobile Park,
+Climate Pledge Arena and Husky Stadium on past event days (`event_explore.py`,
+from `data/event_effects.csv` and `data/event_shifts.csv`, made by
+`scripts/make_event_effects.py`). The numbers use 2022 to 2025 and do not
+change with the selected date. The call types are for browsing past incident
+mix only. The model uses total calls, not separate category targets.
 
 ## 15. Data and limits tab
 
@@ -564,21 +559,47 @@ resources.
 
 ## 16. Forecast dates
 
-The three future dates are October 29, 30 and 31.
+The first three future dates are October 29, 30 and 31.
 
 They come from `forecast_features.csv`, not from adding a new call to the
 past count table.
 
 | Date | Planning time | Citywide estimate |
 |---|---|---:|
-| October 29 | October 27 at 08:00 | 317.7 |
-| October 30 | October 28 at 08:00 | 327.7 |
-| October 31 | October 29 at 08:00 | 311.2 |
+| October 29 | October 27 at 08:00 | 317.5 |
+| October 30 | October 28 at 08:00 | 329.5 |
+| October 31 | October 29 at 08:00 | 311.6 |
 
 Each future date is marked **Forecast** because `station_shift_counts.csv`
 has no actual counts after October 28.
 
 October 31 has no hourly chart because it is a 25-hour shift.
+
+From November 1 to January 26, 2027, the recent calls are not known.
+`scripts/step4_features.py` already wrote these rows into
+`forecast_features.csv`: the calendar and holiday inputs come from the date,
+and each of the five lag inputs is its own average over past shifts with the
+same station, weekday and month (saved in `data/lag_fill_means.csv`). The
+heading adds "· long-range estimate" and one caption explains it. In a
+backtest this beat the plain weekday average up to about 180 days ahead
+(90-day citywide MAE 19.95 against 20.69), so the app stops at 90 days. The
+likely range was measured on forecasts with real recent calls, so on these
+dates it probably holds less often.
+
+## 16b. Event warnings
+
+For SFD 10 and SFD 22, the Prediction tab shows a yellow warning under the
+estimate when a big event falls on the shift (`event_warnings.py`, from
+`data/events.csv` and `data/concerts.csv`):
+
+* Seahawks home game at Lumen Field: SFD 10,
+* stadium concert at Lumen Field: SFD 10,
+* Husky football home game at Husky Stadium: SFD 22.
+
+The warning does not change the estimate or the range. A caption under it
+says "Event warnings are informational and are not included in the
+forecast." Every estimate also says "The estimate does not include weather or
+events such as games."
 
 ## 17. What the app does not do
 
@@ -625,11 +646,12 @@ predictions. It does not run `.fit()` or retrain on the supervisor's clicks.
 
 ## 19. Try it yourself
 
-1. Start at SFD 10 and October 24. Confirm 313.6 citywide and 39.3 for SFD 10.
-2. Switch to SFD 2. Confirm that the citywide number stays 313.6.
+1. Start at SFD 10 and October 24. Confirm 312.8 citywide and 40.0 for SFD 10.
+2. Switch to SFD 2. Confirm that the citywide number stays 312.8.
 3. Open the table and verify that the highest estimate appears first.
 4. Pick October 29. Confirm it is labelled Forecast and has a planning time of October 27 at 08:00.
 5. Pick October 31. Confirm the hourly note instead of 24 hourly bars.
-6. Open Explore and compare Monday-to-Sunday averages.
-7. Open Data and limits and locate each source and limitation.
-8. Download a table and compare its values with the on-screen table.
+6. Pick October 25 at SFD 10. Confirm the Seahawks warning; switch to SFD 5 and confirm it is gone.
+7. Open Explore. On Citywide pick Medical, on Stations click two areas to compare them, then open Events.
+8. Open Data and limits and locate each source and limitation.
+9. Download a table and compare its values with the on-screen table.

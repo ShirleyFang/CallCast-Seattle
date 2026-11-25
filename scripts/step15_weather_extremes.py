@@ -41,6 +41,9 @@ WIND_FC = 65.0       # km/h, forecast gust_max: GFS is ~4 km/h weaker than ERA5 
                      # so 70 - 4 rounded down. The hit/miss table in (a) was seen while exploring,
                      # but was not used to pick this value.
 FREEZE = 0.0         # degC, temp_min <= FREEZE
+# (b) sensitivity checks for freezing, also fixed before looking at their results
+FREEZE_HARD = -2.0   # degC, a stricter freezing threshold
+SPELL_SHIFTS = 2     # a cold spell = at least this many consecutive freezing shifts
 SNOW = 1.0           # cm, snow_sum >= SNOW
 USUAL_WEEKS = 4      # "usual" = same weekday, up to 4 weeks before and after
 WEIGHTS = [5, 20]    # sample weights for extreme training shifts, fixed in advance
@@ -63,8 +66,8 @@ df = load_dataset(DATA_PATH)
 df = df[df[DATE_COL] < TEST_START]
 assert df[DATE_COL].max() < pd.Timestamp(TEST_START)
 print(f"{len(df)} rows, {df[DATE_COL].min().date()} to {df[DATE_COL].max().date()}")
-print("Note: uses main's modeling dataset. A's scores will change once the special-day columns "
-      "(is_nye, is_day_after_thanksgiving, is_xmas) from phase2-features are merged.")
+print("Note: A is the baseline model. The final model also has the special days (is_nye, "
+      "is_day_after_thanksgiving, is_xmas), built in memory by train_model.py, not stored in this dataset.")
 
 # one row per shift: citywide calls and the (citywide) weather
 city = df.groupby(DATE_COL).agg(calls=(TARGET, 'sum'), stations=(TARGET, 'size'),
@@ -127,23 +130,42 @@ print(wind_shifts[['era5_gust_max', 'fc_gust_max', 'calls']].round(1).to_string(
 # 3. (b) effect size: ratio of calls to "usual", bootstrap over events
 print('\n=== (b) Effect size: calls / usual (same weekday, +-4 weeks, non-extreme shifts) ===')
 rng = np.random.default_rng(SEED)
+
+
+def effect(label, mask, period, end):
+    """Mean calls / usual on the masked shifts before `end`, usual shifts also before `end`; event bootstrap CI."""
+    allowed = set(city.index[city.index < end])
+    days = city.index[mask & (city.index < end)]
+    ratio = pd.Series({d: city.loc[d, 'calls'] / usual(d, allowed)[0] for d in days}).dropna()
+    ev = events(ratio.index)
+    groups = [ratio[ev == e].to_numpy() for e in ev.unique()]
+    boot = [np.concatenate([groups[i] for i in rng.integers(len(groups), size=len(groups))]).mean()
+            for _ in range(N_BOOT)]
+    return {'event': label, 'period': period, 'shifts': len(ratio), 'events': len(groups),
+            'mean ratio': ratio.mean(), 'CI low': np.percentile(boot, 2.5), 'CI high': np.percentile(boot, 97.5)}
+
+
 effect_rows = []
 for label, mask in [(f'strong wind (ERA5 gust >= {WIND_ERA5:.0f})', shift_flags['era5']['flag_wind'].eq(1)),
                     (f'freezing (ERA5 temp_min <= {FREEZE:.0f})', shift_flags['era5']['flag_freeze'].eq(1)),
                     (f'snow (ERA5 snow_sum >= {SNOW:.0f} cm)', shift_flags['era5']['flag_snow'].eq(1))]:
     for period, end in [('2022-2025', TEST_START), ('2022-2024', '2025-01-01')]:
-        days = city.index[mask & (city.index < end)]
-        ratio = pd.Series({d: city.loc[d, 'calls'] / usual(d)[0] for d in days}).dropna()
-        ev = events(ratio.index)
-        groups = [ratio[ev == e].to_numpy() for e in ev.unique()]
-        boot = [np.concatenate([groups[i] for i in rng.integers(len(groups), size=len(groups))]).mean()
-                for _ in range(N_BOOT)]
-        effect_rows.append({'event': label, 'period': period, 'shifts': len(ratio), 'events': len(groups),
-                            'mean ratio': ratio.mean(), 'CI low': np.percentile(boot, 2.5),
-                            'CI high': np.percentile(boot, 97.5)})
+        effect_rows.append(effect(label, mask, period, end))
 print(pd.DataFrame(effect_rows).round(3).to_string(index=False))
 print('Ratio 1.10 = 10% more calls than usual. 95% CI from resampling whole events (consecutive '
-      'extreme shifts = one event). Usual excludes any ERA5-extreme shift; Dec 2025 cannot use 2026.')
+      'extreme shifts = one event). Usual excludes any ERA5-extreme shift and stays inside the period.')
+
+# sensitivity for freezing (2022-2025): a stricter threshold, and cold spells vs single freezing shifts.
+# "usual" is unchanged (it still leaves out every shift with temp_min <= FREEZE).
+freeze = shift_flags['era5']['flag_freeze'].eq(1)
+run_length = events(city.index[freeze]).pipe(lambda ev: ev.map(ev.value_counts()))
+in_spell = pd.Series(city.index.isin(run_length.index[run_length >= SPELL_SHIFTS]), index=city.index)
+sensitivity = [effect(f'freezing (ERA5 temp_min <= {FREEZE_HARD:.0f})',
+                      city['era5_temp_min'].le(FREEZE_HARD), '2022-2025', TEST_START),
+               effect(f'freezing, spell of {SPELL_SHIFTS}+ shifts', freeze & in_spell, '2022-2025', TEST_START),
+               effect('freezing, single shift', freeze & ~in_spell, '2022-2025', TEST_START)]
+print('\nFreezing sensitivity (thresholds fixed in advance):')
+print(pd.DataFrame(sensitivity).round(3).to_string(index=False))
 
 # which stations carry the strong-wind effect (descriptive)
 wind_days = city.index[shift_flags['era5']['flag_wind'].eq(1)]

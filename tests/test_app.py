@@ -18,7 +18,6 @@ from unittest import mock
 
 import numpy as np
 import pandas as pd
-import pyarrow as pa
 
 os.environ.setdefault("STREAMLIT_LOGGER_LEVEL", "error")
 
@@ -33,9 +32,9 @@ class _IgnoreBareModeWarning(logging.Filter):
         return "missing ScriptRunContext" not in record.getMessage()
 
 
-logging.getLogger(
-    "streamlit.runtime.scriptrunner_utils.script_run_context"
-).addFilter(_IgnoreBareModeWarning())
+logging.getLogger("streamlit.runtime.scriptrunner_utils.script_run_context").addFilter(
+    _IgnoreBareModeWarning()
+)
 
 from app_data import (
     ROOT,
@@ -142,12 +141,13 @@ class PlanningTimeTests(AppTestCase):
             self.assertIsNone(first_model_date(Path(folder)))
 
     def test_picker_ends_at_the_last_forecast_date(self):
-        # Forecast shifts after October 28 can be picked; October 28 stays the last day of counts.
+        # Forecast shifts after October 28 can be picked, 90 days ahead (to Jan 26, 2027);
+        # October 28 stays the last day of counts.
         last_forecast = self.features.ShiftDate.max().date()
-        self.assertEqual(last_forecast, date(2026, 10, 31))
+        self.assertEqual(last_forecast, date(2027, 1, 26))
         self.assertEqual(
             target_dates(self.counts, first_model_date(), last_forecast),
-            (date(2026, 1, 3), date(2026, 10, 31), date(2026, 10, 24)),
+            (date(2026, 1, 3), date(2027, 1, 26), date(2026, 10, 24)),
         )
         self.assertEqual(self.counts.ShiftDate.max().date(), date(2026, 10, 28))
 
@@ -291,17 +291,18 @@ class ModelConnectionTests(AppTestCase):
             self.predict()
 
 
-# Forecast shifts: the three shifts after the last day of counts.
+# Forecast shifts: the 90 shifts after the last day of counts. The first three use real
+# recent calls; later ones use typical values from data/lag_fill_means.csv.
 
 
 class ForecastTests(AppTestCase):
     def test_forecast_rows_are_added_without_calls(self):
         last_count = self.counts.ShiftDate.max()
         forecast = self.features[self.features.ShiftDate > last_count]
-        self.assertEqual(len(forecast), 34 * 3)
+        self.assertEqual(len(forecast), 34 * 90)
         self.assertEqual(
             sorted(forecast.ShiftDate.dt.date.unique()),
-            [date(2026, 10, 29), date(2026, 10, 30), date(2026, 10, 31)],
+            list(pd.date_range("2026-10-29", "2027-01-26").date),
         )
         self.assertTrue(forecast.calls.isna().all())
         self.assertEqual(set(forecast.Station), set(self.ids))
@@ -309,6 +310,38 @@ class ForecastTests(AppTestCase):
         self.assertTrue(
             self.features[self.features.ShiftDate <= last_count].calls.notna().all()
         )
+
+    def test_long_range_estimates_follow_holidays(self):
+        # With no recent calls, holidays still move the estimate: Christmas is quieter and
+        # New Year's Eve busier than a usual shift on the same weekday.
+        def gap(day):
+            result, _ = learned_predictions(self.features, day, self.ids)
+            usual = reference_predictions(self.counts, day, self.ids)
+            return result.predicted_calls.sum() - usual.predicted_calls.sum()
+
+        self.assertLess(gap("2026-12-25"), -20)
+        self.assertGreater(gap("2026-12-31"), 20)
+
+    def test_special_days_still_show_in_far_forecasts(self):
+        totals = {
+            day: learned_predictions(self.features, day, self.ids)[
+                0
+            ].predicted_calls.sum()
+            for day in ["2026-12-30", "2026-12-31"]
+        }
+        # New Year's Eve is a special day in the model: calls are higher than the day before.
+        self.assertGreater(totals["2026-12-31"], totals["2026-12-30"] + 30)
+
+    def test_dates_past_the_last_forecast_say_so(self):
+        # The day after the 90th forecast shift is out of range, not a data gap.
+        for day in ["2027-01-27", "2027-06-01"]:
+            with self.assertRaisesRegex(
+                ValueError, "estimates go up to Jan 26, 2027"
+            ):
+                learned_predictions(self.features, day, self.ids)
+        # A real gap inside the range keeps its own message.
+        with self.assertRaisesRegex(ValueError, "call data for this shift has a gap"):
+            learned_predictions(self.features, "2026-01-09", self.ids)
 
     def test_model_gives_34_stations_and_the_expected_totals(self):
         for target, total in [
@@ -382,7 +415,7 @@ class LikelyRangeTests(AppTestCase):
 
     def test_low_and_high_surround_each_estimate(self):
         bands, _ = load_ranges()
-        # 1.0 would go below zero, 5.0 is the top of the first band, 39.3 is SFD 10 on Oct 24.
+        # 1.0 would go below zero, 5.0 is the top of the first band, 39.3 is in the 20 to 40 band.
         view = pd.DataFrame({"predicted_calls": [1.0, 5.0, 5.1, 12.0, 39.3, 80.0]})
         result = add_likely_range(view, bands)
         self.assertTrue((result.low >= 0).all())
@@ -446,12 +479,14 @@ class ScreenTests(unittest.TestCase):
     def test_tab_names_and_explore_charts(self):
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
         self.assertFalse(app.exception, [e.message for e in app.exception])
+        # Explore has three sub-tabs (Citywide, Stations, Events); AppTest lists them in page order.
         self.assertEqual(
-            [t.label for t in app.tabs], ["Prediction", "Explore", "Data and limits"]
+            [t.label for t in app.tabs],
+            ["Prediction", "Explore", "Citywide", "Stations", "Events", "Data and limits"],
         )
         # Explore keeps the history charts; model performance stays out of the app.
         explore = " ".join(c.value for c in app.tabs[1].caption)
-        self.assertIn("Same history as the Prediction tab", explore)
+        self.assertIn("without shifts that have missing data", explore)
         shown = " ".join(
             x.value
             for tab in app.tabs
@@ -556,21 +591,22 @@ class ScreenTests(unittest.TestCase):
     def test_explore_charts_use_plain_names_in_order(self):
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
         self.assertFalse(app.exception, [e.message for e in app.exception])
-        # Bar charts on screen, in order: hourly (Prediction), weekday, station, category.
-        tables = []
-        for chart in app.get("vega_lite_chart"):
-            data = (chart.proto.datasets or [chart.proto])[0].data.data
-            tables.append(pa.ipc.open_stream(data).read_all().to_pandas())
-        self.assertEqual(len(tables), 4)
-        weekday, by_station, category = tables[1:]
-        self.assertEqual(weekday.iloc[:, 0].tolist()[:2], ["Mon", "Tue"])
-        # Stations run in number order: SFD 2 comes before SFD 18.
-        shown = by_station["Station"].tolist()
+        # The only bar chart drawn by Streamlit itself is the hourly one on the Prediction tab.
+        self.assertEqual(len(app.get("vega_lite_chart")), 1)
+        # Stations tab: calls by station, in number order (SFD 2 before SFD 18).
+        stations = next(t for t in app.tabs if t.label == "Stations")
+        by_station = json.loads(stations.get("plotly_chart")[0].proto.spec)
+        shown = list(by_station["data"][0]["x"])
         self.assertEqual(len(shown), 34)
         self.assertEqual(shown, sorted(shown, key=lambda s: int(s.split()[-1])))
-        self.assertEqual(
-            category.iloc[:, 0].tolist(), ["Fire", "Medical", "Non-emergency", "Other"]
-        )
+        # Citywide plotly charts: weekdays Monday to Sunday, categories in plain words.
+        city = next(t for t in app.tabs if t.label == "Citywide")
+        figures = [json.loads(c.proto.spec) for c in city.get("plotly_chart")]
+        bars = [f for f in figures if f["data"][0]["type"] == "bar"]
+        weekday = next(f for f in bars if f["data"][0].get("orientation") != "h")
+        self.assertEqual(list(weekday["data"][0]["x"]), ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+        category = next(f for f in bars if f["data"][0].get("orientation") == "h")
+        self.assertEqual([t["name"] for t in category["data"]], ["Fire", "Medical", "Non-emergency", "Other"])
 
     def test_likely_range_is_shown_for_city_station_and_table(self):
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
@@ -603,7 +639,12 @@ class ScreenTests(unittest.TestCase):
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
         picker = app.sidebar.date_input[0]
         self.assertEqual(
-            (picker.min, picker.max), (date(2026, 1, 3), date(2026, 10, 31))
+            (picker.min, picker.max), (date(2026, 1, 3), date(2027, 1, 26))
+        )
+        # The sidebar tells the supervisor how far ahead estimates go.
+        self.assertIn(
+            "Estimates are available up to Jan 26, 2027.",
+            [c.value for c in app.sidebar.caption],
         )
 
     def test_forecast_dates_are_labelled_and_checked_on_screen(self):
@@ -619,6 +660,8 @@ class ScreenTests(unittest.TestCase):
             self.assertEqual(len(app.dataframe[0].value), 34)
             self.assertIn("Forecast", app.subheader[0].value)
             self.assertTrue(any("Forecast:" in c.value for c in app.caption))
+            # The first three forecast shifts still have real recent calls.
+            self.assertNotIn("long-range", app.subheader[0].value)
         # October 31 is 25 hours long, so the hourly view says so instead of drawing.
         notes = " ".join(x.value for e in app.expander for x in e.info)
         self.assertIn("25 hours long", notes)
@@ -626,6 +669,79 @@ class ScreenTests(unittest.TestCase):
         app.sidebar.date_input[0].set_value(date(2026, 10, 28)).run(timeout=60)
         self.assertNotIn("Forecast", app.subheader[0].value)
         self.assertFalse(any("Forecast:" in c.value for c in app.caption))
+
+    def test_long_range_dates_are_labelled_on_screen(self):
+        # From Nov 1 (4 shifts after the last counts) to Jan 26, 2027 the estimate uses
+        # typical recent-call values, and the screen says so once.
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+        for day in [date(2026, 11, 1), date(2026, 12, 25), date(2027, 1, 26)]:
+            app.sidebar.date_input[0].set_value(day).run(timeout=60)
+            self.assertFalse(app.exception, str(day))
+            self.assertIn("Forecast", app.subheader[0].value)
+            self.assertIn("long-range estimate", app.subheader[0].value)
+            notes = [c.value for c in app.caption if c.value.startswith("Long-range estimate:")]
+            self.assertEqual(len(notes), 1, str(day))
+            self.assertEqual(len(app.dataframe[0].value), 34)
+        # Every estimate says that weather and events are not included.
+        self.assertTrue(any("does not include weather" in c.value for c in app.caption))
+        # A shift with real recent calls has no long-range note and the usual range wording.
+        app.sidebar.date_input[0].set_value(date(2026, 10, 31)).run(timeout=60)
+        captions = " ".join(c.value for c in app.caption)
+        self.assertNotIn("Long-range estimate", captions)
+        self.assertIn("about 4 in 5 similar station shifts", captions)
+        self.assertIn("about 7 in 10 citywide totals", captions)
+
+    def test_explanation_of_far_dates_is_on_the_limits_tab(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        limits = next(t for t in app.tabs if t.label == "Data and limits")
+        text = " ".join(m.value for m in limits.markdown)
+        self.assertIn("Dates far ahead", text)
+        self.assertIn("Estimates go up to 90 days after the last data", text)
+
+    def test_explore_says_which_shifts_it_uses(self):
+        # Explore follows the planning time; past the data, every date uses the same history.
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+
+        def explore_note_and_table():
+            explore = next(t for t in app.tabs if t.label == "Explore")
+            city = next(t for t in app.tabs if t.label == "Citywide")
+            # A plain caption normally; an info box when the date is past the data.
+            notes = [c.value for c in explore.caption] + [i.value for i in explore.info]
+            note = next(n for n in notes if "Citywide and Stations use finished shifts" in n)
+            return note, city.dataframe[0].value
+
+        def explore_info():
+            explore = next(t for t in app.tabs if t.label == "Explore")
+            return [i.value for i in explore.info if "after the last day of data" in i.value]
+
+        for day, expected, boxed in [
+            # Jan 9 is an outage shift, so the last usable one before the planning time is Jan 8;
+            # that is not the end of the data.
+            (date(2026, 1, 12), "up to Thu Jan 08, 2026 (the last one finished by the planning time)", False),
+            (date(2026, 10, 31), "up to Wed Oct 28, 2026 (the last one finished by the planning time)", False),
+            (date(2026, 11, 1), "up to Wed Oct 28, 2026, so every later date shows the same history", True),
+        ]:
+            app.sidebar.date_input[0].set_value(day).run(timeout=60)
+            self.assertFalse(app.exception, str(day))
+            self.assertIn(expected, explore_note_and_table()[0])
+            # Past the data the note stands out as an info box, only inside Explore.
+            self.assertEqual(bool(explore_info()), boxed, str(day))
+        prediction = next(t for t in app.tabs if t.label == "Prediction")
+        self.assertFalse(any("after the last day of data" in i.value for i in prediction.info))
+        self.assertIn("The estimate for this date is on the Prediction tab.", explore_info()[0])
+        _, nov = explore_note_and_table()
+        app.sidebar.date_input[0].set_value(date(2027, 1, 20)).run(timeout=60)
+        pd.testing.assert_frame_equal(nov, explore_note_and_table()[1])
+
+    def test_explore_charts_explain_how_to_read_them(self):
+        # Every Explore chart has a one-line note on what it shows and how to read it.
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+        city = " ".join(c.value for c in next(t for t in app.tabs if t.label == "Citywide").caption)
+        for phrase in ["the top edge is all calls", "busier days of the week",
+                       "seasons and longer-term changes", "split by type"]:
+            self.assertIn(phrase, city)
+        stations = " ".join(c.value for c in next(t for t in app.tabs if t.label == "Stations").caption)
+        self.assertIn("Bars above the dashed line are busier", stations)
 
 
 if __name__ == "__main__":
