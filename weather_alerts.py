@@ -11,7 +11,9 @@ Which forecast is used, so the alert matches what was known at the planning time
     previous_runs  later shifts whose planning time has passed: the archived GFS day-3 forecast
     live           planning time still ahead and the shift within ALERT_DAYS: the latest forecast
 Thresholds and their check: README Step 15 (a) and (e), scripts/check_alert_thresholds.py.
+With CALLCAST_OFFLINE=1 (set in tests/__init__.py) nothing is downloaded: those shifts show "unavailable".
 """
+import os
 import sys
 from pathlib import Path
 
@@ -52,7 +54,7 @@ MESSAGES = {
     "unavailable": "Weather forecast unavailable right now.",
 }
 NOTE = (
-    "Weather alerts are for information only and do not change the numbers above. "
+    "Weather alerts are informational and are not included in the forecast. "
     "Forecasts a few days ahead often change."
 )
 
@@ -93,6 +95,8 @@ def _fetched_shifts(url, model, suffix, day, root, fetch):
         ("start_date", str((day - pd.Timedelta(days=2)).date())),
         ("end_date", str((day + pd.Timedelta(days=3)).date())),
     )
+    if fetch is None and os.environ.get("CALLCAST_OFFLINE"):
+        raise OSError("offline")
     body = (fetch or _download)(url, params)
     hourly = pd.DataFrame(body["hourly"])
     hourly["time"] = pd.to_datetime(hourly["time"])

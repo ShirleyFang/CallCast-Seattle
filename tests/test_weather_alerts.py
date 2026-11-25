@@ -1,7 +1,7 @@
 """Weather alerts on the Prediction tab: which forecast is used, the thresholds, and the wording.
 Every forecast here is made up; nothing is downloaded.
 
-Run: uv run python -m unittest discover -s tests -v
+Run: uv run python -m unittest discover -s tests -t . -v
 """
 
 import tempfile
@@ -182,6 +182,12 @@ class ForecastSourceTests(WeatherAlertTestCase):
             table["hourly"]["temperature_2m_previous_day3"][80] = None
             return table
         self.assertEqual(self.alerts("2025-06-07", "2025-06-05 09:00", partial)["status"], "unavailable")
+
+
+    def test_offline_never_downloads(self):
+        with mock.patch.dict("os.environ", {"CALLCAST_OFFLINE": "1"}):
+            out = self.alerts("2025-06-07", "2025-06-05 09:00")
+        self.assertEqual(out["status"], "unavailable")
 
 
 class WordingTests(unittest.TestCase):

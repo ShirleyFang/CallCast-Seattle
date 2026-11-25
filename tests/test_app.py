@@ -479,10 +479,10 @@ class ScreenTests(unittest.TestCase):
     def test_tab_names_and_explore_charts(self):
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
         self.assertFalse(app.exception, [e.message for e in app.exception])
-        # Explore has three sub-tabs (Citywide, Stations, Events); AppTest lists them in page order.
+        # Explore has four sub-tabs (Citywide, Stations, Events, Weather); AppTest lists them in page order.
         self.assertEqual(
             [t.label for t in app.tabs],
-            ["Prediction", "Explore", "Citywide", "Stations", "Events", "Data and limits"],
+            ["Prediction", "Explore", "Citywide", "Stations", "Events", "Weather", "Data and limits"],
         )
         # Explore keeps the history charts; model performance stays out of the app.
         explore = " ".join(c.value for c in app.tabs[1].caption)
