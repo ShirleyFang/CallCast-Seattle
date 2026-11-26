@@ -21,8 +21,9 @@ Open the local address printed by Streamlit. It is usually
 
 The app has three tabs:
 
-1. **Prediction** - choose a date and station, see point estimates and ranges,
-   view the map and download the table.
+1. **Prediction** - choose a date, see the citywide estimate and the stations
+   to watch, click up to 3 station areas on the map to compare them, and
+   download the table.
 2. **Explore** - three sub-tabs of past patterns: **Citywide** (map, last 90
    days, weekday, month and call type), **Stations** (station-area map; click
    up to 3 areas to compare them) and **Events** (how calls changed near the
@@ -35,6 +36,9 @@ The app has three tabs:
 The main code files are:
 
 * [`app.py`](../app.py) builds the Streamlit page and chart elements.
+* [`station_forecast.py`](../station_forecast.py) holds the Prediction tab's
+  small calculations: the watch list, the map shades, the call type mix, the
+  click handling and the "Data through" line.
 * [`app_data.py`](../app_data.py) reads CSVs, checks data, computes the usual
   calls and invokes the saved model.
 * [`predict.py`](../predict.py) loads the saved GBM and transforms 34 feature
@@ -44,8 +48,10 @@ The main code files are:
 * [`poisson_gbm.joblib`](../models/poisson_gbm.joblib) stores the fitted
   Poisson GBM.
 
-Streamlit reruns `app.py` when a sidebar selection changes. App data is
-cached and is reread when the file modification times change.
+Streamlit reruns `app.py` when the date changes or a station is picked. App
+data is cached and is reread when the file modification times change. The
+estimates, the usual calls and the call type mix for one date are cached too
+(`forecast_for()`), so a map click does not rebuild them for all 34 stations.
 
 ## 2. The data loaded at startup
 
@@ -53,10 +59,10 @@ The app reads only the files needed for the page:
 
 | File | App value | How the app uses it |
 |---|---|---|
-| [`sfd_stations.csv`](../data/sfd_stations.csv) | `stations` | station menu, station count, map dots and map coordinates |
+| [`sfd_stations.csv`](../data/sfd_stations.csv) | `stations` | station list for the compare box, station count and map coordinates |
 | [`station_shift_counts.csv`](../data/station_shift_counts.csv) | `counts` | past calls, outage flags, weekday averages and Explore history |
 | [`modeling_dataset.csv`](../data/modeling_dataset.csv) | `features` | model feature rows for historical 2026 dates |
-| [`forecast_features.csv`](../data/forecast_features.csv) | appended to `features` | model feature rows for October 29–31, with no actual `calls` |
+| [`forecast_features.csv`](../data/forecast_features.csv) | appended to `features` | model feature rows for the 90 forecast shifts (Oct 29, 2026 to Jan 26, 2027), with no actual `calls` |
 | [`prediction_ranges.csv`](../data/prediction_ranges.csv) | `bands`, `city_range` | point-estimate uncertainty for station and citywide numbers |
 | [`hourly_profile.csv`](../data/hourly_profile.csv) | read inside the hourly expander | share of a station shift expected in each hour |
 
@@ -138,12 +144,13 @@ The app still knows station locations and may show history where available.
 
 ![Ranked table and download](walkthrough_images/03_table_download.jpg)
 
-Leave the date at October 24 and the station at SFD 10. The page calculates:
+Leave the date at October 24 and pick SFD 10 (click its area on the map or
+choose it in the list under the map). The page calculates:
 
 | Card or column | Value | Meaning |
 |---|---:|---|
 | Citywide expected calls | 312.8 | Sum of 34 station point estimates |
-| SFD 10 expected calls | 40.0 | Fitted GBM estimate for SFD 10 |
+| SFD 10 expected calls (after picking it) | 40.0 | Fitted GBM estimate for SFD 10 |
 | SFD 10 Usual | 38.9 | Earlier Saturday average for SFD 10 |
 | SFD 10 Difference | +1.1 | 40.0 minus 38.9 |
 | Citywide Usual | 306.4 | Sum of all 34 station weekday averages |
@@ -191,7 +198,7 @@ Saturday average. A negative difference means the model expects fewer.
 
 The production model is a **Poisson Gradient Boosting Machine**. It builds
 many small correction trees one after another. It is a fitted mathematical
-model, not an AI agent, and it does not make staffing decisions.
+model, not a staffing tool, and it does not dispatch units.
 
 The saved model file is:
 
@@ -258,19 +265,38 @@ The saved model applies its learned tree structure to these values and
 returns 34 numerical call estimates. It does not choose a random answer and
 does not update from clicks in the app.
 
-## 7. Change the station
+## 7. Pick stations to compare
 
-![SFD 2 selected](walkthrough_images/02_station_selection.jpg)
+![Three stations picked](walkthrough_images/02_station_selection.jpg)
 
-The station menu is generated from `sfd_stations.csv` and ordered numerically.
-It does not rerun the model for only one station. `learned_predictions()`
-calculates all 34 stations on every prediction.
+The sidebar has only the date and the planning time. Stations are picked in
+the Prediction tab, in either of two places that stay in step:
 
-Switching to SFD 2:
+* click a station area on the map (a second click on a picked area removes
+  it),
+* or choose stations in the "Compare stations (up to 3)" list under the map,
+  which works with a keyboard and on a phone.
 
-* changes SFD 10's 40.0 estimate to SFD 2's 31.7 estimate,
-* changes the right card and table selection,
-* changes the selected station history and category chart,
+The list is the one place the picks are kept. The map only reports clicks:
+each click picks or unpicks one station. Three stations is the limit. A
+fourth click on the map is refused with a message ("Up to 3 stations can be
+compared at once ..."), and the list stops at three.
+
+Nothing is picked at first. The page then shows the citywide card, the map,
+the citywide call type mix and the ranked table. With stations picked it adds
+a "Comparing ..." block with one card per station: expected calls and the
+difference from usual, the likely range, the usual for this weekday and any
+event warning for that station. The station list is generated from
+`sfd_stations.csv` and ordered numerically. The page does not rerun the model
+for only one station: `learned_predictions()` calculates all 34 stations once
+per date.
+
+Picking SFD 2 after SFD 10:
+
+* adds a second card with SFD 2's 31.7 estimate next to SFD 10's 40.0,
+* highlights both rows in the table,
+* keeps the hourly breakdown and the history chart on SFD 10, the first
+  station picked (with nothing picked they show the whole city),
 * leaves the citywide card at 312.8.
 
 The citywide estimate is the sum:
@@ -290,27 +316,50 @@ SFD 2 difference = 31.7 - 32.5 = -0.8
 
 ## 8. The map
 
-The map joins station coordinates to the 34 row prediction table:
+The map draws the same station areas as the Explore tab (`station_areas.py`):
+each area is the part of Seattle closer to that station than to any other,
+cut at the city boundary. It is not an official legal dispatch boundary.
+
+Each area is shaded by the expected minus usual calls for that station
+(`difference_fills()` in `station_forecast.py`):
 
 ```text
-sfd_stations.csv
-  Station name -> lat/lon
-  + predicted_calls
+difference = expected calls - usual for this weekday
 ```
 
-Every dot represents a fire station area. It is not an official legal
-dispatch boundary.
+Blue is quieter than usual, light is about usual and orange is busier. The
+scale is the same size on both sides and never stretches a gap smaller than 2
+calls to the full colour. Blue and orange stay apart for people with red-green
+colour blindness, and the legend under the map names both ends in words. The
+Explore maps use grey slate shades for history, so a historical average is
+never mistaken for a forecast. Pointing at an area shows its expected calls,
+likely range and usual. Picked areas get a coloured outline (blue, red, gold),
+the same colours as the Explore comparison charts.
 
-Dot size is:
+### Stations to watch
 
-```text
-point_size = (predicted_calls + 1) x 12
-```
+Above the map, a short list (at most 5) names the stations that are likely
+busier than usual: expected at least 2 calls and at least 10% above usual
+(`WATCH_MIN_EXTRA` and `WATCH_MIN_SHARE`). A smaller gap is inside the normal
+swing from shift to shift. When no station passes, the page says so. A rule
+based on the width of the likely range was tried first and found too strict:
+the ranges are about 20 calls wide, so no station passed on any of the test
+dates.
 
-The extra 1 keeps stations with low or zero estimates visible. Larger dots
-mean larger point estimates. The dot does not show the likely range.
+### Call type mix
 
-Under the map are links to:
+For the picked stations (or the whole city when none is picked) the page shows
+the average medical, fire, non-emergency and other calls per shift in the same
+months of earlier years, using only shifts finished by the planning time and
+without missing data. It is history, not a forecast: per-station forecasts by
+call type are not in the app because there are too few calls.
+
+### Data through
+
+Under the heading, "Data through Thu Oct 22 08:00" is the end of the last shift
+finished by the planning time (the Wednesday shift ends Thursday at 08:00).
+
+Above the ranked table are links to:
 
 * SFD Live for live incident activity.
 * the Seattle Breaking station coverage guide.
@@ -476,9 +525,9 @@ plain message.
 
 ## 13. The history line
 
-Below the prediction area, the app selects the chosen station and builds a
-90-day known-history line ending at the last shift completed by the planning
-time.
+Below the prediction area, the app selects the first picked station (or adds
+up all stations when none is picked) and builds a 90-day known-history line
+ending at the last shift completed by the planning time.
 
 On October 24:
 
@@ -588,8 +637,9 @@ dates it probably holds less often.
 
 ## 16b. Event warnings
 
-For SFD 10 and SFD 22, the Prediction tab shows a yellow warning under the
-estimate when a big event falls on the shift (`event_warnings.py`, from
+For SFD 10 and SFD 22, the Prediction tab shows a yellow warning in that
+station's card, once the station is picked, when a big event falls on the
+shift (`event_warnings.py`, from
 `data/events.csv` and `data/concerts.csv`):
 
 * Seahawks home game at Lumen Field: SFD 10,
@@ -646,12 +696,12 @@ predictions. It does not run `.fit()` or retrain on the supervisor's clicks.
 
 ## 19. Try it yourself
 
-1. Start at SFD 10 and October 24. Confirm 312.8 citywide and 40.0 for SFD 10.
-2. Switch to SFD 2. Confirm that the citywide number stays 312.8.
+1. Start at October 24 and pick SFD 10 on the map. Confirm 312.8 citywide and 40.0 for SFD 10.
+2. Pick SFD 2 too. Confirm that the citywide number stays 312.8 and a second card shows 31.7. Pick two more stations: the fourth is refused with a message.
 3. Open the table and verify that the highest estimate appears first.
 4. Pick October 29. Confirm it is labelled Forecast and has a planning time of October 27 at 08:00.
 5. Pick October 31. Confirm the hourly note instead of 24 hourly bars.
-6. Pick October 25 at SFD 10. Confirm the Seahawks warning; switch to SFD 5 and confirm it is gone.
+6. Pick October 25 and SFD 10. Confirm the Seahawks warning; remove SFD 10, pick SFD 5 and confirm it is gone.
 7. Open Explore. On Citywide pick Medical, on Stations click two areas to compare them, then open Events.
 8. Open Data and limits and locate each source and limitation.
 9. Download a table and compare its values with the on-screen table.

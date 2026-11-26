@@ -1,4 +1,4 @@
-"""Station area map for the Explore tab: the Seattle city boundary and each station's area.
+"""Station area map for the Prediction and Explore tabs: the Seattle city boundary and each station's area.
 
 A station's area is the part of Seattle closer to that station than to any other one. This is
 the same rule notebooks/data_clean.ipynb uses to give each call to a station (its nearest
@@ -35,7 +35,7 @@ AREA_LAYER_ID = "station-areas"  # the clickable layer; the app reads the select
 
 
 def selected_stations(event):
-    """Station names of the areas clicked on the map, from st.pydeck_chart's selection state."""
+    # Read clicked station names from st.pydeck_chart's selection state, keeping order.
     if event is None:
         return []
     objects = event.get("selection", {}).get("objects", {}).get(AREA_LAYER_ID, [])
@@ -119,12 +119,12 @@ def _rgb(hex_color):
     return [int(hex_color[i : i + 2], 16) for i in (1, 3, 5)]
 
 
-def shade(values, low=None, high=None):
-    """RGBA fill per station: the lowest value lightest, the highest darkest (linear)."""
+def shade(values, low=None, high=None, colors=SHADE_STOPS):
+    """RGBA fill per station: the lowest value gets the first colour, the highest the last."""
     values = pd.Series(values, dtype=float)
     low = values.min() if low is None else low
     high = values.max() if high is None else high
-    stops = np.array([_rgb(c) for c in SHADE_STOPS], dtype=float)
+    stops = np.array([_rgb(c) for c in colors], dtype=float)
     out = {}
     for name, value in values.items():
         t = 0.0 if high <= low or pd.isna(value) else float(np.clip((value - low) / (high - low), 0, 1))
@@ -189,16 +189,17 @@ def value_map(areas, boundary, values, value_text):
     )
 
 
-def area_features(areas, averages=None, fills=None, extra=None):
+def area_features(areas, averages=None, fills=None, extra=None, details=None):
     """GeoJSON features for the station areas, with the hover text in their properties.
 
     fills maps a station to an RGBA fill (e.g. its share shade); extra maps a station to one
-    more hover line (e.g. "Fire share: 27%").
+    more hover line (e.g. "Fire share: 27%"); details maps a station to a dict of further
+    properties for a custom tooltip.
     """
     features = []
     for name, polygon in areas.items():
         props = {"Station": name, "fill": (fills or {}).get(name, CLEAR_FILL),
-                 "extra": (extra or {}).get(name, "")}
+                 "extra": (extra or {}).get(name, ""), **(details or {}).get(name, {})}
         if averages:
             for key, window in averages.items():
                 value = window["mean"].get(name, np.nan)
@@ -224,17 +225,20 @@ def picked_outline_layers(areas, picked_colors):
     return [halo, outline]
 
 
-def area_map(areas, boundary, stations, averages, fills=None, picked_colors=None, extra=None):
+def area_map(areas, boundary, stations, averages, fills=None, picked_colors=None, extra=None,
+             details=None, tooltip_html=None):
     """pydeck map: city outline, station areas, station dots, hover.
 
     fills shades the areas (e.g. by fire share; nearly clear if not given). Picked stations get
-    a coloured outline (picked_colors: station -> RGBA). extra adds a hover line per station.
+    a coloured outline (picked_colors: station -> RGBA). extra adds a hover line per station;
+    details and tooltip_html replace the whole hover text (the tooltip fills {names} from
+    each station's details).
     """
     # Fixed layer ids: Streamlit needs them to keep the clicked areas selected across reruns.
     city_layer = _city_layer(boundary, "city-boundary")
     area_layer = pdk.Layer(
         "GeoJsonLayer",
-        {"type": "FeatureCollection", "features": area_features(areas, averages, fills, extra)},
+        {"type": "FeatureCollection", "features": area_features(areas, averages, fills, extra, details)},
         id=AREA_LAYER_ID,
         stroked=True,
         filled=True,
@@ -260,7 +264,8 @@ def area_map(areas, boundary, stations, averages, fills=None, picked_colors=None
         radius_max_pixels=6,
     )
     tooltip = {
-        "html": "<b>{Station}</b><br/>{extra}<br/>"
+        "html": tooltip_html
+        or "<b>{Station}</b><br/>{extra}<br/>"
         "Last week: {week_avg} calls per shift<br/><small>{week_dates}</small><br/>"
         "Last month: {month_avg} calls per shift<br/><small>{month_dates}</small>",
         "style": TOOLTIP_STYLE,

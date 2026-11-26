@@ -7,6 +7,7 @@ import streamlit as st
 from app_data import (
     ROOT,
     add_likely_range,
+    citywide_hourly,
     citywide_range,
     first_model_date,
     forecast_origin,
@@ -30,6 +31,18 @@ from station_areas import (
 )
 from event_explore import show_event_effects
 from event_warnings import get_event_warnings
+from station_forecast import (
+    DIVERGE_STOPS,
+    WATCH_MAX,
+    WATCH_MIN_EXTRA,
+    WATCH_MIN_SHARE,
+    data_through,
+    difference_fills,
+    mix_table,
+    season_mix,
+    stations_to_watch,
+    toggle_picks,
+)
 from station_compare import (
     CALL_TYPES,
     CITY,
@@ -79,6 +92,14 @@ TABLE_COLUMNS = [
     "difference",
 ]
 
+# Session keys: the picked stations (the multiselect) and the Prediction map.
+PICK_KEY = "compare_stations"
+MAP_KEY = "prediction_map"
+# The map's clicked areas at the last run, to tell which area a new click changed.
+CLICKED_KEY = "map_clicked"
+# Light gold behind the picked stations' rows in the table.
+PICK_HIGHLIGHT = "background-color: #F3E3B8"
+
 # The first 3 shifts after the last day of counts use real recent calls (lag3 is known);
 # later shifts use typical values instead (MIN_LAG and data/lag_fill_means.csv in step 4).
 RECENT_CALL_SHIFTS = 3
@@ -107,6 +128,25 @@ def read_station_areas(stations_stamp):
     stations = pd.read_csv(ROOT / "data/sfd_stations.csv")
     boundary = load_boundary()
     return build_station_areas(stations, boundary), boundary
+
+
+@st.cache_data
+def forecast_for(stamps, model_stamps, target, bands, station_ids):
+    # Built once per date and data version (the stamps are only cache keys): a click on the
+    # map only reruns the page.
+    _, counts, features = read_data(stamps)
+    usual = validate_predictions(reference_predictions(counts, target, station_ids), station_ids)
+    # Always use the trained model for the supervisor-facing forecast.
+    result, _ = learned_predictions(features, target, station_ids)
+    # Match each station's estimate with its usual count to calculate the difference.
+    view = result.merge(
+        usual.rename(columns={"predicted_calls": "usual_calls"}),
+        on="Station",
+        validate="one_to_one",
+    )
+    view["difference"] = view["predicted_calls"] - view["usual_calls"]
+    # Low and high: the estimate plus the usual misses for a forecast of that size.
+    return add_likely_range(view, bands), season_mix(known_history(counts, target), target)
 
 
 def zoom_safe_line_chart(container, series, tick_format="%b %d", color="#2F5D8A"):
@@ -163,6 +203,9 @@ try:
     ]
     # File change times tell the cache when these CSVs need to be read again.
     stamps = tuple((ROOT / "data" / name).stat().st_mtime_ns for name in names)
+    # The estimate also changes when the model files change.
+    model_files = [ROOT / "predict.py", ROOT / "model_metadata.json", *sorted((ROOT / "models").glob("*"))]
+    model_stamps = tuple(p.stat().st_mtime_ns if p.exists() else 0 for p in model_files)
     # stations: sfd_stations.csv supplies station names and map coordinates.
     # counts: station_shift_counts.csv supplies past call totals and categories.
     # features: modeling_dataset.csv and forecast_features.csv supply the model's inputs.
@@ -178,7 +221,7 @@ except (OSError, ValueError, KeyError) as exc:
     st.error(f"Cannot read the shared data: {exc}")
     st.stop()
 
-# Fill the station menu from sfd_stations.csv, ordered by station number.
+# Station names from sfd_stations.csv, ordered by station number, for the compare list.
 station_ids = sorted(stations["station"], key=lambda x: int(x.split()[-1]))
 first = counts["ShiftDate"].min().date()
 last = counts["ShiftDate"].max().date()
@@ -192,11 +235,6 @@ target_date = st.sidebar.date_input(
     max_value=max_date,
 )
 st.sidebar.caption(f"Estimates are available up to {max_date:%b %d, %Y}.")
-station = st.sidebar.selectbox(
-    "Station area",
-    station_ids,
-    index=station_ids.index("SFD 10") if "SFD 10" in station_ids else 0,
-)
 
 # For a Saturday target, show Thursday at 08:00 as the time the supervisor would plan.
 origin = forecast_origin(target_date)
@@ -234,16 +272,30 @@ with prediction_tab:
             "uses the typical pattern for this station, month, weekday and holidays. "
             "It is less precise than an estimate for the next few days."
         )
-    usual = None
-    result = None
+    st.caption(
+        f"Data through {data_through(history)}, the last shift finished by the planning time."
+        if not history.empty
+        else "No completed shifts before the planning time yet."
+    )
+    # The map keeps its own clicked areas, but the multiselect is the only place the picked
+    # stations are kept: an area whose click state changed since the last run was clicked
+    # once, and that click picks or unpicks its station.
+    on_map = selected_stations(st.session_state.get(MAP_KEY))
+    # Sorted so two clicks that land in one run always give the same result.
+    clicked = sorted(set(on_map) ^ set(st.session_state.get(CLICKED_KEY, [])))
+    st.session_state[CLICKED_KEY] = on_map
+    refused = []
+    picks = st.session_state.get(PICK_KEY, [])
+    if clicked:
+        picks, refused = toggle_picks(picks, clicked)
+    # Saved on every run: on a date with no estimate the list is not drawn, and Streamlit
+    # would otherwise drop the picks with it.
+    st.session_state[PICK_KEY] = picks
+    picked = picks
+    view = None
     try:
-        # Calculate each station's usual calls from earlier matching weekdays.
-        usual = validate_predictions(
-            reference_predictions(counts, target_date, station_ids), station_ids
-        )
-
-        # Always use the trained model for the supervisor-facing forecast.
-        result, _ = learned_predictions(features, target_date, station_ids)
+        # Estimates, usual calls and the call type mix, built once per date.
+        view, mix = forecast_for(stamps, model_stamps, target_date, bands, tuple(station_ids))
     except (
         OSError,
         ValueError,
@@ -254,36 +306,120 @@ with prediction_tab:
     ) as exc:
         st.warning(str(exc))
 
-    if result is not None:
-        # Match each station's estimate with its usual count to calculate the difference.
-        view = result.merge(
-            usual.rename(columns={"predicted_calls": "usual_calls"}),
-            on="Station",
-            validate="one_to_one",
-        )
-        view["difference"] = view["predicted_calls"] - view["usual_calls"]
-        # Low and high: the estimate plus the usual misses for a forecast of that size.
-        view = add_likely_range(view, bands)
-        selected = view.set_index("Station").loc[station]
-        # Show all stations added together and the selected station's individual estimate.
-        left, right = st.columns(2)
+    if view is not None:
+        by_station = view.set_index("Station")
+        total = view["predicted_calls"].sum()
+        # The whole city on the left, the stations to watch on the right; the stations picked
+        # on the map come further down.
+        left, right = st.columns([1, 2])
         left.metric(
             "Citywide expected calls",
-            f"{view['predicted_calls'].sum():.1f}",
+            f"{total:.1f}",
             delta=f"{view['difference'].sum():+.1f} vs usual",
             delta_color="off",
         )
-        right.metric(
-            f"{station} expected calls",
-            f"{selected['predicted_calls']:.1f}",
-            delta=f"{selected['difference']:+.1f} vs usual",
-            delta_color="off",
-        )
-        city_low, city_high = citywide_range(view["predicted_calls"].sum(), city_range)
+        city_low, city_high = citywide_range(total, city_range)
         left.caption(f"Likely range: {city_low} to {city_high}")
-        right.caption(
-            f"Likely range: {int(selected['low'])} to {int(selected['high'])}"
+        right.markdown("##### Stations to watch")
+        watch = stations_to_watch(view)
+        if watch.empty:
+            right.caption("No station is clearly busier than usual for this shift.")
+        for _, row in watch.iterrows():
+            right.markdown(
+                f"- **{row['Station']}**: likely busier than usual "
+                f"(expected {row['predicted_calls']:.1f}, usual {row['usual_calls']:.1f})"
+            )
+        if not watch.empty:
+            right.caption(
+                f"Shown when the estimate is at least {WATCH_MIN_EXTRA} calls and "
+                f"{WATCH_MIN_SHARE:.0%} above the usual for this weekday. "
+                f"At most {WATCH_MAX} are listed."
+            )
+
+        st.markdown("##### Expected calls compared with usual, by station area")
+        if refused:
+            verb = "was" if len(refused) == 1 else "were"
+            st.warning(
+                f"Up to {MAX_COMPARE} stations can be compared at once, so {', '.join(refused)} "
+                f"{verb} not added. Click a picked area again, or remove it from the list below, "
+                "to make room."
+            )
+        areas, boundary = read_station_areas(stamps[0])
+        hover = {
+            name: {
+                "expected": f"{r['predicted_calls']:.1f}",
+                "range": f"{int(r['low'])} to {int(r['high'])}",
+                "usual": f"{r['usual_calls']:.1f}",
+            }
+            for name, r in by_station.iterrows()
+        }
+        outlines = {name: station_color(picked, name, alpha=255) for name in picked}
+        # The key keeps the clicked areas when the date, and with it the shading, changes.
+        st.pydeck_chart(
+            area_map(
+                areas,
+                boundary,
+                stations,
+                None,
+                fills=difference_fills(view),
+                picked_colors=outlines,
+                details=hover,
+                tooltip_html="<b>{Station}</b><br/>Expected {expected} calls<br/>"
+                "Likely range {range}<br/>Usual {usual}",
+            ),
+            on_select="rerun",
+            selection_mode="multi-object",
+            key=MAP_KEY,
         )
+        st.html(
+            f'<div style="height:10px;border-radius:3px;background:linear-gradient(to right,'
+            f'{", ".join(DIVERGE_STOPS)})"></div>'
+            '<div style="display:flex;justify-content:space-between;font-size:0.8rem">'
+            "<span>Quieter than usual</span><span>About usual</span>"
+            "<span>Busier than usual</span></div>"
+        )
+        st.caption(
+            "Shaded by expected calls compared with the usual for this weekday (busier or quieter "
+            "than usual). This is a forecast, not history. Each area is the part of Seattle "
+            "closest to that station. Point at an area for its numbers, click it to pick it."
+        )
+        st.multiselect(
+            f"Compare stations (up to {MAX_COMPARE})",
+            station_ids,
+            key=PICK_KEY,
+            max_selections=MAX_COMPARE,
+            placeholder="Choose stations, or click areas on the map",
+        )
+
+        if picked:
+            st.subheader("Comparing " + ", ".join(picked))
+            any_warning = False
+            for column, name in zip(st.columns(len(picked)), picked):
+                row = by_station.loc[name]
+                with column:
+                    st.metric(
+                        f"{name} expected calls",
+                        f"{row['predicted_calls']:.1f}",
+                        delta=f"{row['difference']:+.1f} vs usual",
+                        delta_color="off",
+                    )
+                    st.caption(f"Likely range: {int(row['low'])} to {int(row['high'])}")
+                    st.caption(f"Usual for this weekday: {row['usual_calls']:.1f}")
+                    # Event warnings are informational and do not change the estimate.
+                    for warning in get_event_warnings(target_date, name):
+                        st.warning(warning)
+                        any_warning = True
+            if any_warning:
+                st.caption("Event warnings are informational and are not included in the forecast.")
+        names = picked or [CITY]
+        st.markdown("##### Call type mix (average calls per shift)")
+        st.dataframe(
+            mix_table(mix, names),
+            width="stretch",
+            column_config={n: st.column_config.NumberColumn(format="%.1f") for n in names},
+        )
+        st.caption("From past shifts in this season, not a forecast.")
+
         st.caption(
             "Likely range: about 4 in 5 similar station shifts and about 7 in 10 citywide totals ended up inside it. "
             "It shows how much the estimate can vary and is not a staffing recommendation."
@@ -292,36 +428,17 @@ with prediction_tab:
             "Usual = the average of earlier shifts on this weekday. Difference = expected minus usual."
         )
         st.caption("The estimate does not include weather or events such as games.")
-
-        # Show station-specific event warnings without changing model predictions.
-        event_warnings = get_event_warnings(target_date, station)
-
-        for warning in event_warnings:
-            st.warning(warning)
-
-        if event_warnings:
-            st.caption("Event warnings are informational and are not included in the forecast.")
-
-        # Add lat/lon from sfd_stations.csv to put each station's estimate on the map.
-        map_data = stations.merge(
-            view, left_on="station", right_on="Station", validate="one_to_one"
-        )
-        # Bigger counts get bigger points; adding 1 keeps stations with zero calls visible.
-        map_data["point_size"] = (map_data["predicted_calls"] + 1) * 12
-        st.map(
-            map_data,
-            latitude="lat",
-            longitude="lon",
-            size="point_size",
-            color="#A4282BCC",
-        )
-        st.caption("Dots are fire stations. Bigger dots mean more expected calls.")
         st.caption(LINKS)
         st.caption("Low and High show the likely range for each station.")
-        st.dataframe(
+        table = (
             view[TABLE_COLUMNS]
             .sort_values("predicted_calls", ascending=False)
-            .rename(columns=COLUMN_NAMES),
+            .rename(columns=COLUMN_NAMES)
+        )
+        st.dataframe(
+            table.style.apply(
+                lambda r: [PICK_HIGHLIGHT if r["Station"] in picked else ""] * len(r), axis=1
+            ),
             hide_index=True,
             width="stretch",
             # Show one decimal, like the cards above; the full numbers stay in the table.
@@ -346,26 +463,36 @@ with prediction_tab:
         )
         with st.expander("Hourly breakdown"):
             try:
-                # Use hourly_profile.csv shares to divide this station's shift estimate by hour.
-                hourly = hourly_allocation(
-                    ROOT, target_date, station, selected["predicted_calls"]
-                )
+                # Use hourly_profile.csv shares to divide the shift estimate by hour.
+                if picked:
+                    hourly = hourly_allocation(
+                        ROOT, target_date, picked[0], by_station.loc[picked[0], "predicted_calls"]
+                    )
+                else:
+                    hourly = citywide_hourly(ROOT, target_date, by_station["predicted_calls"])
                 st.bar_chart(hourly.set_index("hour")[["expected_calls"]], sort=False)
                 st.caption(
-                    "Splits the shift total by each hour's usual share of calls, starting at 08:00."
+                    "Splits the shift total by each hour's usual share of calls, starting at 08:00. "
+                    f"Shows {picked[0] if picked else 'the whole city'}: the first station "
+                    "picked, or the whole city when none is picked."
                 )
             except (OSError, ValueError, KeyError) as exc:
                 st.info(str(exc))
     else:
+        picked = []
+        # The map is gone, and with it its clicked areas.
+        st.session_state[CLICKED_KEY] = []
         # Keep the station location map available when no estimate can be produced.
         st.info(
             "No estimate for this shift yet. The station map and history are still below."
         )
         st.map(stations, latitude="lat", longitude="lon", color="#A4282BCC")
         st.caption(LINKS)
-    # Plot the selected station's earlier calls from station_shift_counts.csv.
-    station_history = history.loc[history["Station"] == station].set_index("ShiftDate")
-    st.subheader(f"{station}: history known at planning time")
+    # Plot the first picked station's earlier calls, or the whole city's, from station_shift_counts.csv.
+    focus = picked[0] if picked else CITY
+    rows = history[history["Station"] == picked[0]] if picked else citywide(history)
+    station_history = rows.set_index("ShiftDate")
+    st.subheader(f"{focus}: history known at planning time")
     if not station_history.empty:
         recent = station_history[["calls"]].last_valid_index()
         series = station_history[["calls"]].loc[
@@ -379,7 +506,7 @@ with prediction_tab:
             ),
         )
         st.caption(
-            "Gaps are shifts with missing data. A 0 means the station really had no calls."
+            "Gaps are shifts with missing data. A 0 means there really were no calls."
         )
 
 with explore_tab:

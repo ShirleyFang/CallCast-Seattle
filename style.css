@@ -4,12 +4,9 @@
 button,
 a,
 summary,
-label:has(input[type="radio"]),
 [role="tab"],
 [role="option"],
 [role="gridcell"],
-[data-testid="stSelectbox"] > div[data-rac],
-[data-testid="stSelectbox"] > div[data-rac] *,
 [data-testid="stDateInputField"],
 [data-testid="stDateInputField"] * {
   cursor: pointer !important;
@@ -46,13 +43,11 @@ label:has(input[type="radio"]),
   background-color: #EFEBE5;
 }
 
-/* Station menu and date box: red border on hover */
-[data-testid="stSelectbox"] > div[data-rac],
+/* Date box: red border on hover */
 [data-testid="stDateInputField"] {
   border-radius: 0.25rem;
   transition: box-shadow 0.15s ease;
 }
-[data-testid="stSelectbox"] > div[data-rac]:hover,
 [data-testid="stDateInputField"]:hover {
   box-shadow: 0 0 0 2px #E06A6D;
 }
@@ -65,18 +60,6 @@ label:has(input[type="radio"]),
 /* Calendar days: the picker opens on the dark sidebar, so days you can pick need light text */
 [data-testid="stDateInputCalendar"] td [role="button"]:not([aria-disabled="true"]) {
   color: #F2EEE8;
-}
-
-/* Radio options in the sidebar */
-label:has(input[type="radio"]) {
-  transition: color 0.15s ease;
-}
-label:has(input[type="radio"]):hover {
-  color: #FFFFFF !important;
-}
-label:has(input[type="radio"]):hover p {
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 /* Hourly breakdown box */
@@ -110,7 +93,6 @@ a:hover {
   [data-testid^="stBaseButton"],
   [data-testid^="stBaseButton"]:hover,
   [role="tab"],
-  [data-testid="stSelectbox"] > div[data-rac],
   [data-testid="stDateInputField"],
   [data-testid="stExpander"] summary {
     transition: none !important;

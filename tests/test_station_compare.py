@@ -181,8 +181,8 @@ class CompareTests(unittest.TestCase):
 
 
 class CitywideScreenTests(unittest.TestCase):
-    def test_citywide_tab_ignores_the_sidebar_station(self):
-        # Explore starts with the whole city; the sidebar station only drives the Prediction tab.
+    def test_citywide_tab_ignores_the_stations_picked_in_prediction(self):
+        # Explore starts with the whole city; stations picked in the Prediction tab stay there.
         import os
 
         os.environ.setdefault("STREAMLIT_LOGGER_LEVEL", "error")
@@ -198,7 +198,7 @@ class CitywideScreenTests(unittest.TestCase):
         self.assertFalse(app.exception, [e.message for e in app.exception])
         before = citywide_table(app)
         self.assertEqual(list(before.index), [CITY])
-        app.sidebar.selectbox[0].select("SFD 2").run(timeout=60)
+        app.multiselect[0].select("SFD 2").run(timeout=60)
         pd.testing.assert_frame_equal(before, citywide_table(app))
         # With nothing picked on the map, the Stations tab points to the map.
         stations = next(t for t in app.tabs if t.label == "Stations")

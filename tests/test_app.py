@@ -21,6 +21,7 @@ import pandas as pd
 
 os.environ.setdefault("STREAMLIT_LOGGER_LEVEL", "error")
 
+import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 # AppTest runs Streamlit outside its normal server context; suppress only its
@@ -39,6 +40,7 @@ logging.getLogger("streamlit.runtime.scriptrunner_utils.script_run_context").add
 from app_data import (
     ROOT,
     add_likely_range,
+    citywide_hourly,
     citywide_range,
     first_model_date,
     forecast_origin,
@@ -66,14 +68,14 @@ class AppTestCase(unittest.TestCase):
         cls.ids = cls.stations.station.tolist()
 
 
-def write_profile(root, history_through="2024-12-31"):
-    # Even 1/24 share per hour for SFD 10, saved where the app looks for it.
+def write_profile(root, history_through="2024-12-31", stations=("SFD 10",)):
+    # Even 1/24 share per hour for each station, saved where the app looks for it.
     (root / "data").mkdir(exist_ok=True)
     pd.DataFrame(
         {
-            "Station": ["SFD 10"] * 24,
-            "shift_hour": range(24),
-            "share": [1 / 24] * 24,
+            "Station": [s for s in stations for _ in range(24)],
+            "shift_hour": list(range(24)) * len(stations),
+            "share": [1 / 24] * 24 * len(stations),
             "history_through": history_through,
         }
     ).to_csv(root / "data/hourly_profile.csv", index=False)
@@ -453,6 +455,17 @@ class HourlyBreakdownTests(unittest.TestCase):
         self.assertAlmostEqual(result.expected_calls.sum(), 30)
         self.assertEqual(result.hour.iloc[0], "08:00")  # shift starts at 08:00
 
+    def test_citywide_hours_add_every_station(self):
+        write_profile(self.root, stations=("SFD 10", "SFD 2"))
+        # Two stations stand for the city: 30 + 10 calls, and the file is read only once.
+        with mock.patch("app_data.pd.read_csv", wraps=pd.read_csv) as read:
+            result = citywide_hourly(self.root, "2026-10-24", {"SFD 10": 30, "SFD 2": 10})
+        self.assertAlmostEqual(result.expected_calls.sum(), 40)
+        self.assertEqual(len(result), 24)
+        self.assertEqual(read.call_count, 1)
+        with self.assertRaises(ValueError):
+            citywide_hourly(self.root, "2026-10-24", {})
+
     def test_rejects_profile_built_from_future_data(self):
         write_profile(self.root, history_through="2026-10-24")
         with self.assertRaisesRegex(ValueError, "unavailable"):
@@ -473,6 +486,11 @@ class HourlyBreakdownTests(unittest.TestCase):
 
 
 # Screen: runs app.py like a browser would and reads what it shows.
+
+
+def ranked(app):
+    # The ranked table is the one with the Expected calls column (the call type mix is another).
+    return next(d.value for d in app.dataframe if "Expected calls" in d.value.columns)
 
 
 class ScreenTests(unittest.TestCase):
@@ -497,19 +515,21 @@ class ScreenTests(unittest.TestCase):
         self.assertNotIn("outage", shown)
         self.assertIn("missing data", shown)
 
-    def test_default_screen_and_station_switch(self):
+    def test_default_screen_and_station_compare(self):
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
         self.assertFalse(app.exception, [e.message for e in app.exception])
-        self.assertEqual(len(app.sidebar.selectbox[0].options), 34)
+        # The sidebar holds only the date and the planning time: stations are picked in the tab.
+        self.assertEqual(len(app.sidebar.selectbox), 0)
+        self.assertEqual(len(app.sidebar.date_input), 1)
         # No prediction source switch: the app always shows the trained model.
         self.assertEqual(len(app.sidebar.radio), 0)
-        # Default view: Oct 24, SFD 10, the model's numbers.
+        # Default view: Oct 24, nothing picked, the citywide card with the model's numbers.
+        self.assertEqual(app.multiselect[0].value, [])
+        self.assertEqual(len(app.metric), 1)
         self.assertEqual(app.metric[0].value, "312.8")
-        self.assertEqual(app.metric[1].value, "40.0")
-        # Both cards compare with the usual number: 312.8 - 306.4 = +6.3 (unrounded sums).
+        # The card compares with the usual number: 312.8 - 306.4 = +6.3 (unrounded sums).
         self.assertEqual(app.metric[0].delta, "+6.3 vs usual")
-        self.assertEqual(app.metric[1].delta, "+1.1 vs usual")
-        table = app.dataframe[0].value
+        table = ranked(app)
         self.assertAlmostEqual(table["Expected calls"].sum(), 312.8, delta=0.05)
         # The table covers all 34 stations, none below 0, and the city card is their sum.
         self.assertEqual(len(table), 34)
@@ -532,11 +552,15 @@ class ScreenTests(unittest.TestCase):
         )
         self.assertTrue((table["Low"] <= table["Expected calls"]).all())
         self.assertTrue((table["Expected calls"] <= table["High"]).all())
-        # Switching station changes the station number, not the citywide total.
-        app.sidebar.selectbox[0].select("SFD 2").run()
+        # Picking stations adds one card each, side by side; the citywide total stays.
+        app.multiselect[0].select("SFD 10").run()
         self.assertFalse(app.exception)
         self.assertEqual(app.metric[0].value, "312.8")
-        self.assertEqual(app.metric[1].value, "31.7")
+        self.assertEqual(app.metric[1].label, "SFD 10 expected calls")
+        self.assertEqual(app.metric[1].value, "40.0")
+        self.assertEqual(app.metric[1].delta, "+1.1 vs usual")
+        app.multiselect[0].select("SFD 2").run()
+        self.assertEqual([m.value for m in app.metric], ["312.8", "40.0", "31.7"])
 
     def test_calendar_days_are_readable_on_the_dark_sidebar(self):
         # The picker opens on the sidebar's secondary color, so the days you can pick
@@ -611,8 +635,10 @@ class ScreenTests(unittest.TestCase):
     def test_likely_range_is_shown_for_city_station_and_table(self):
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
         captions = [c.value for c in app.caption]
-        # The city and the selected station (SFD 10, expected 40.0) each get a range.
+        # The city gets a range, and so does each picked station (SFD 10, expected 40.0).
         self.assertIn("Likely range: 283 to 345", captions)
+        app.multiselect[0].select("SFD 10").run(timeout=60)
+        captions = [c.value for c in app.caption]
         self.assertIn("Likely range: 31 to 50", captions)
         meaning = next(c for c in captions if "4 in 5" in c)
         self.assertIn("not a staffing recommendation", meaning)
@@ -627,6 +653,8 @@ class ScreenTests(unittest.TestCase):
 
     def test_model_error_is_looked_up_and_shown_once(self):
         # A model failure should give one warning, and the page should ask the model once.
+        # Estimates are kept per date, so start without earlier tests' copies.
+        st.cache_data.clear()
         with mock.patch(
             "app_data.learned_predictions", side_effect=ValueError("model broke")
         ) as lookup:
@@ -657,7 +685,7 @@ class ScreenTests(unittest.TestCase):
             app.sidebar.date_input[0].set_value(day).run(timeout=60)
             self.assertFalse(app.exception, str(day))
             self.assertEqual(app.metric[0].value, total)
-            self.assertEqual(len(app.dataframe[0].value), 34)
+            self.assertEqual(len(ranked(app)), 34)
             self.assertIn("Forecast", app.subheader[0].value)
             self.assertTrue(any("Forecast:" in c.value for c in app.caption))
             # The first three forecast shifts still have real recent calls.
@@ -681,7 +709,7 @@ class ScreenTests(unittest.TestCase):
             self.assertIn("long-range estimate", app.subheader[0].value)
             notes = [c.value for c in app.caption if c.value.startswith("Long-range estimate:")]
             self.assertEqual(len(notes), 1, str(day))
-            self.assertEqual(len(app.dataframe[0].value), 34)
+            self.assertEqual(len(ranked(app)), 34)
         # Every estimate says that weather and events are not included.
         self.assertTrue(any("does not include weather" in c.value for c in app.caption))
         # A shift with real recent calls has no long-range note and the usual range wording.
@@ -742,6 +770,143 @@ class ScreenTests(unittest.TestCase):
             self.assertIn(phrase, city)
         stations = " ".join(c.value for c in next(t for t in app.tabs if t.label == "Stations").caption)
         self.assertIn("Bars above the dashed line are busier", stations)
+
+
+def click_area(app, name):
+    # AppTest cannot click a map, so write the selection the map would send (its clicked
+    # areas, with this one switched), then rerun.
+    shown = app.session_state["map_clicked"]
+    now = [n for n in shown if n != name] if name in shown else [*shown, name]
+    objects = {"station-areas": [{"properties": {"Station": n}} for n in now]}
+    app.session_state["prediction_map"] = {"selection": {"objects": objects, "indices": {}}}
+    return app.run(timeout=60)
+
+
+class PredictionTabTests(unittest.TestCase):
+    def test_default_view_shows_city_map_watch_list_and_call_types(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        self.assertFalse(app.exception, [e.message for e in app.exception])
+        headings = [m.value for m in app.markdown]
+        self.assertIn("##### Stations to watch", headings)
+        self.assertIn("##### Call type mix (average calls per shift)", headings)
+        captions = [c.value for c in app.caption]
+        # Oct 24: no station is far enough above usual, and the screen says so.
+        self.assertIn("No station is clearly busier than usual for this shift.", captions)
+        self.assertIn("From past shifts in this season, not a forecast.", captions)
+        self.assertTrue(any(c.startswith("Shaded by expected calls compared with the usual") for c in captions))
+        self.assertTrue(any("This is a forecast, not history." in c for c in captions))
+        # Nothing picked: the call type mix is the city's, and the history chart is the city's.
+        mix = next(d.value for d in app.dataframe if list(d.value.columns) == ["Citywide"])
+        self.assertEqual(list(mix.index), ["Medical", "Fire", "Non-emergency", "Other"])
+        self.assertIn("Citywide: history known at planning time", [s.value for s in app.subheader])
+        self.assertEqual(len(ranked(app)), 34)
+
+    def test_picks_survive_a_date_with_a_data_gap(self):
+        # Jan 9, 2026 has no estimate, so the list is not drawn; the picks must still be there after.
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        app.multiselect[0].set_value(["SFD 10", "SFD 2"]).run(timeout=60)
+        app.sidebar.date_input[0].set_value(date(2026, 1, 9)).run(timeout=60)
+        app.sidebar.date_input[0].set_value(date(2026, 10, 24)).run(timeout=60)
+        self.assertFalse(app.exception, [e.message for e in app.exception])
+        self.assertEqual(app.multiselect[0].value, ["SFD 10", "SFD 2"])
+        self.assertIn("Comparing SFD 10, SFD 2", [s.value for s in app.subheader])
+
+    def test_freshness_line_gives_the_end_of_the_last_finished_shift(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        # Planning time is Thursday Oct 22 08:00, when the Wednesday shift has just ended.
+        self.assertIn(
+            "Data through Thu Oct 22 08:00, the last shift finished by the planning time.",
+            [c.value for c in app.caption],
+        )
+
+    def test_map_is_shaded_by_difference_and_has_the_hover_numbers(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=30)
+        spec = json.loads(app.get("deck_gl_json_chart")[0].proto.json)
+        areas = next(l for l in spec["layers"] if l.get("pickable"))
+        self.assertEqual(len(areas["data"]["features"]), 34)
+        props = areas["data"]["features"][0]["properties"]
+        # Plain values, so the tooltip can lay them out (a <br/> inside a value would print as text).
+        self.assertRegex(props["expected"], r"^[\d.]+$")
+        self.assertRegex(props["range"], r"^\d+ to \d+$")
+        self.assertRegex(props["usual"], r"^[\d.]+$")
+        # Shaded by difference: the stations are not all one colour, and the busiest sits on
+        # the orange side (more red than blue).
+        fills = {f["properties"]["Station"]: f["properties"]["fill"] for f in areas["data"]["features"]}
+        self.assertGreater(len({tuple(f) for f in fills.values()}), 10)
+        table = ranked(app).set_index("Station")["Difference"]
+        busiest, quietest = fills[table.idxmax()], fills[table.idxmin()]
+        self.assertGreater(busiest[0] - busiest[2], 0)
+        self.assertLess(quietest[0] - quietest[2], 0)
+
+    def test_two_stations_are_compared_side_by_side(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+        app.multiselect[0].select("SFD 10").select("SFD 2").run(timeout=60)
+        self.assertFalse(app.exception, [e.message for e in app.exception])
+        self.assertEqual([m.label for m in app.metric][1:], ["SFD 10 expected calls", "SFD 2 expected calls"])
+        captions = [c.value for c in app.caption]
+        self.assertIn("Likely range: 31 to 50", captions)
+        self.assertTrue(any(c.startswith("Usual for this weekday:") for c in captions))
+        self.assertIn("Comparing SFD 10, SFD 2", [s.value for s in app.subheader])
+        mix = next(d.value for d in app.dataframe if list(d.value.columns) == ["SFD 10", "SFD 2"])
+        self.assertEqual(len(mix), 4)
+
+    def test_map_clicks_pick_unpick_and_stop_at_three(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+        for name in ["SFD 5", "SFD 10", "SFD 2"]:
+            click_area(app, name)
+        self.assertEqual(app.multiselect[0].value, ["SFD 5", "SFD 10", "SFD 2"])
+        self.assertEqual(len(app.metric), 4)
+        # A fourth area is refused with a plain message, and the three stay picked.
+        click_area(app, "SFD 3")
+        self.assertEqual(app.multiselect[0].value, ["SFD 5", "SFD 10", "SFD 2"])
+        self.assertTrue(any("Up to 3 stations can be compared at once" in w.value for w in app.warning))
+        # Clicking a picked area again removes it, which makes room.
+        click_area(app, "SFD 10")
+        self.assertEqual(app.multiselect[0].value, ["SFD 5", "SFD 2"])
+        click_area(app, "SFD 3")
+        self.assertEqual(app.multiselect[0].value, ["SFD 5", "SFD 2", "SFD 3"])
+        self.assertFalse(app.exception, [e.message for e in app.exception])
+
+    def test_event_warning_shows_for_the_picked_station_only(self):
+        # Oct 25 is a Seahawks home game: the warning belongs to SFD 10, not to SFD 2.
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+        app.sidebar.date_input[0].set_value(date(2026, 10, 25)).run(timeout=60)
+        self.assertEqual(len(app.warning), 0)
+        app.multiselect[0].select("SFD 2").run(timeout=60)
+        self.assertEqual(len(app.warning), 0)
+        app.multiselect[0].select("SFD 10").run(timeout=60)
+        self.assertEqual(len(app.warning), 1)
+        self.assertIn("Seahawks home game", app.warning[0].value)
+        self.assertIn(
+            "Event warnings are informational and are not included in the forecast.",
+            [c.value for c in app.caption],
+        )
+
+    def test_watch_list_names_stations_clearly_above_usual(self):
+        # Jan 17, 2027 has 8 stations above the rule; the list shows the 5 biggest gaps.
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+        app.sidebar.date_input[0].set_value(date(2027, 1, 17)).run(timeout=60)
+        items = [m.value for m in app.markdown if m.value.startswith("- **")]
+        self.assertEqual(len(items), 5)
+        self.assertTrue(all("likely busier than usual" in i for i in items))
+        self.assertFalse(any("%" in i for i in items))
+
+    def test_hourly_breakdown_and_history_follow_the_first_picked_station(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+        self.assertTrue(any("Shows the whole city" in c.value for c in app.caption))
+        app.multiselect[0].select("SFD 2").select("SFD 10").run(timeout=60)
+        self.assertTrue(any("Shows SFD 2:" in c.value for c in app.caption))
+        self.assertIn("SFD 2: history known at planning time", [s.value for s in app.subheader])
+
+    def test_new_screen_keeps_plain_words_and_the_single_long_range_note(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+        app.sidebar.date_input[0].set_value(date(2026, 11, 2)).run(timeout=60)
+        app.multiselect[0].select("SFD 10").run(timeout=60)
+        tab = app.tabs[0]
+        text = " ".join(x.value for x in [*tab.caption, *tab.markdown, *tab.subheader, *tab.warning])
+        for word in ["MAE", "fold", "model", "Poisson"]:
+            self.assertNotIn(word, text)
+        self.assertEqual(len([c for c in app.caption if c.value.startswith("Long-range estimate:")]), 1)
 
 
 if __name__ == "__main__":

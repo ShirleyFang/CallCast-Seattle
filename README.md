@@ -342,14 +342,19 @@ uv sync --frozen
 uv run streamlit run app.py
 ```
 
-The app only needs the CSVs already in `data/`, not the raw 911 export. Pick a shift date and a station to see:
+The app only needs the CSVs already in `data/`, not the raw 911 export. Pick a shift date in the sidebar (it also shows the planning time); the Prediction tab then shows:
 
-- expected calls for each station and the citywide total
-- a likely range next to each estimate (about 4 in 5 similar station shifts and about 7 in 10 citywide totals landed inside it)
-- a station map and a ranked table you can download as CSV
-- that station's past calls up to the planning time
-- an event warning for SFD 10 (Seahawks home games, stadium concerts at Lumen Field) and SFD 22 (Husky football home games); it is a note only and does not change the estimate (`event_warnings.py`)
-- an Explore tab with three sub-tabs: Citywide (station-area map, last 90 days, weekday, month and call type), Stations (click up to 3 station areas to compare them with the average station) and Events (how calls changed near the venues on past event days, 2022 to 2025). Code: `station_areas.py`, `station_compare.py`, `event_explore.py`; the Events tables come from `scripts/make_event_effects.py`
+- a "Data through" line: the end of the last shift that had finished at the planning time
+- expected calls for the whole city, with its likely range (about 4 in 5 similar station shifts and about 7 in 10 citywide totals landed inside it)
+- stations to watch: up to 5 stations whose estimate is at least 2 calls and 10% above their usual for this weekday (the rule is `WATCH_MIN_EXTRA` and `WATCH_MIN_SHARE` in `station_forecast.py`), or a plain note that none is
+- a station-area map shaded by expected calls compared with the usual for this weekday (blue quieter, orange busier; this is a forecast, so it does not use the slate shades of the Explore maps). Point at an area for its expected calls, likely range and usual; click up to 3 areas to compare them. A fourth click is refused with a message, and clicking a picked area again removes it. The "Compare stations (up to 3)" list under the map does the same and stays in step with the map
+- a side-by-side comparison of the picked stations: expected calls, likely range, usual, difference and any event warning (`event_warnings.py`; a note only, it does not change the estimate)
+- the call type mix: average medical, fire, non-emergency and other calls per shift in the same months of earlier years, for the picked stations or for the whole city. It is history, not a forecast
+- a ranked table of all stations (the picked ones are highlighted) that you can download as CSV
+- an hourly breakdown and the last 90 days of calls for the first picked station, or for the whole city when none is picked
+- an Explore tab with three sub-tabs: Citywide (station-area map, last 90 days, weekday, month and call type), Stations (click up to 3 station areas to compare them with the average station; it keeps its own picks) and Events (how calls changed near the venues on past event days, 2022 to 2025). Code: `station_areas.py`, `station_compare.py`, `event_explore.py`; the Events tables come from `scripts/make_event_effects.py`
+
+The Prediction tab code is `app.py` with `station_forecast.py` (watch list, map shades, call type mix, click handling, "Data through" line).
 
 The app has one forecast, from the saved Poisson GBM through `predict.py`. The model is loaded once from `models/poisson_gbm.joblib`, with its configuration and training cutoff defined in `model_metadata.json`. The "Usual for this weekday" column is each station's average for the same weekday in earlier shifts, shown next to the forecast for comparison.
 
@@ -368,3 +373,36 @@ uv run python -m unittest discover -s tests -v
 ```
 
 [docs/APP_WALKTHROUGH.md](docs/APP_WALKTHROUGH.md) goes through the app screen by screen.
+
+## Run with Docker
+
+First-time setup (once per computer):
+
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (free for personal and education use) and open it. Wait until it says it is running.
+2. In a terminal, run `docker --version`. If it says `zsh: command not found: docker` (Mac), the terminal does not know where Docker is yet. Do one of these:
+   - for this terminal window only: `export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"`
+   - for every new window: `echo 'export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"' >> ~/.zshrc`, then open a new window
+   - or in Docker Desktop, Settings > Advanced, turn on System CLI tools (it may ask for your password)
+3. Run `docker --version` again. It should print a version number.
+
+Build the image from the repository root (excludes `.venv`, `.git`, `.env`, and the raw 289 MB 911 export):
+
+```bash
+docker build -t callcast-seattle .
+```
+
+Start the app on port 8501:
+
+```bash
+docker run --rm -p 8501:8501 callcast-seattle
+```
+
+Open `http://localhost:8501` in a browser. Stop it with Ctrl+C in the terminal. The container exposes `/_stcore/health` for health checks.
+
+If port 8501 is busy, use `-p 8502:8501` and open `http://localhost:8502`.
+
+Or build and start with Docker Compose:
+
+```bash
+docker compose up --build
+```

@@ -123,9 +123,10 @@ class StationAreaTests(unittest.TestCase):
 
 class StationAreaScreenTests(unittest.TestCase):
     def area_map(self, app):
-        # The Stations map is the one with the clickable station-areas layer (Citywide and
-        # Events have their own maps).
-        for chart in app.get("deck_gl_json_chart"):
+        # The Stations map is the one with the clickable station-areas layer in the Explore tab
+        # (Citywide and Events have their own maps, and the Prediction tab another).
+        stations = next(t for t in app.tabs if t.label == "Stations")
+        for chart in stations.get("deck_gl_json_chart"):
             spec = json.loads(chart.proto.json)
             if any(layer.get("id") == "station-areas" for layer in spec["layers"]):
                 return spec

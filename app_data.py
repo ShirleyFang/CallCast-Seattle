@@ -13,11 +13,13 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent
 # These count table columns describe the four call categories shown in history charts.
 GROUPS = ["fire", "medical", "non_emergency", "other"]
+# Each station's share of calls by shift hour, for the hourly breakdown.
+HOURLY_PROFILE = "data/hourly_profile.csv"
 
 
 def load_tables(root=ROOT):
     """Read station locations, past call totals, and model input rows (past and forecast) from four CSVs."""
-    # sfd_stations.csv: names and coordinates for the station menu and map.
+    # sfd_stations.csv: names and coordinates for the compare list and maps.
     stations = pd.read_csv(root / "data/sfd_stations.csv")
     # station_shift_counts.csv: past totals, categories, and suspected outage flags.
     counts = pd.read_csv(root / "data/station_shift_counts.csv")
@@ -381,9 +383,12 @@ def learned_predictions(features, target, station_ids, root=ROOT):
     return validate_predictions(output, station_ids), str(metadata["model_name"])
 
 
-def hourly_allocation(root, target, station, total):
-    """Use hourly_profile.csv to divide one station's shift estimate into hourly amounts."""
-    path = root / "data/hourly_profile.csv"
+def hourly_allocation(root, target, station, total, profile=None):
+    """Use hourly_profile.csv to divide one station's shift estimate into hourly amounts.
+
+    profile is the already read hourly_profile.csv, if the caller has it.
+    """
+    path = root / HOURLY_PROFILE
     if not path.exists():
         raise ValueError(
             "Hourly breakdown not available yet (needs data/hourly_profile.csv)."
@@ -401,7 +406,8 @@ def hourly_allocation(root, target, station, total):
             f"No hourly breakdown for this shift: the clocks change, so it is {hours:.0f} hours long."
         )
     # Each row gives one station, one shift hour, its share of calls, and its history cutoff.
-    profile = pd.read_csv(path)
+    if profile is None:
+        profile = pd.read_csv(path)
     expected = {"Station", "shift_hour", "share", "history_through"}
     if not expected <= set(profile):
         raise ValueError(
@@ -436,6 +442,17 @@ def hourly_allocation(root, target, station, total):
     part["expected_calls"] = shares * total
     part["hour"] = part["shift_hour"].map(lambda h: f"{(int(h) + 8) % 24:02d}:00")
     return part.sort_values("shift_hour")
+
+
+def citywide_hourly(root, target, estimates):
+    # Read hourly_profile.csv once and add every station's hourly amounts for the citywide split.
+    if len(estimates) == 0:
+        raise ValueError("No station estimates to split by hour.")
+    path = root / HOURLY_PROFILE
+    profile = pd.read_csv(path) if path.exists() else None
+    parts = [hourly_allocation(root, target, s, v, profile) for s, v in estimates.items()]
+    total = sum(p["expected_calls"].to_numpy() for p in parts)
+    return parts[0].assign(expected_calls=total)
 
 
 def load_ranges(root=ROOT):
