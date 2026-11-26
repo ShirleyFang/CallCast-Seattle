@@ -16,7 +16,7 @@ import pandas as pd
 os.environ.setdefault("CALLCAST_OFFLINE", "1")
 
 import weather_alerts  # noqa: E402
-from weather_alerts import MESSAGES, get_weather_alerts  # noqa: E402
+from weather_alerts import MESSAGES, get_weather_alerts, show_nws  # noqa: E402
 
 TZ = "America/Los_Angeles"
 
@@ -187,11 +187,25 @@ class ForecastSourceTests(WeatherAlertTestCase):
             return table
         self.assertEqual(self.alerts("2025-06-07", "2025-06-05 09:00", partial)["status"], "unavailable")
 
-
     def test_offline_never_downloads(self):
         with mock.patch.dict("os.environ", {"CALLCAST_OFFLINE": "1"}):
             out = self.alerts("2025-06-07", "2025-06-05 09:00")
         self.assertEqual(out["status"], "unavailable")
+
+
+class NwsNoteTests(unittest.TestCase):
+    # the shift on 2025-06-07 runs from Jun 7 08:00 to Jun 8 08:00
+    def test_shown_for_upcoming_shifts_with_or_without_an_alert(self):
+        for now in ["2025-06-04 08:00", "2025-06-05 09:00", "2025-06-07 12:00", "2025-06-08 07:59"]:
+            with self.subTest(now=now):
+                self.assertTrue(show_nws("2025-06-07", now))
+
+    def test_not_shown_too_far_ahead(self):
+        self.assertFalse(show_nws("2025-06-07", "2025-06-04 07:59"))
+
+    def test_not_shown_once_the_shift_is_over(self):
+        self.assertFalse(show_nws("2025-06-07", "2025-06-08 08:00"))
+        self.assertFalse(show_nws("2025-06-07", "2025-06-20"))
 
 
 class WordingTests(unittest.TestCase):
@@ -202,6 +216,15 @@ class WordingTests(unittest.TestCase):
                 for word in ["model", "MAE", "GFS", "ERA5", "km/h", "°C"]:
                     self.assertNotIn(word, text)
         self.assertNotIn("%", weather_alerts.NOTE)
+
+    def test_nws_note_is_plain_and_only_links_to_the_nws_page(self):
+        note = weather_alerts.NWS_NOTE
+        self.assertNotIn("%", note)
+        self.assertIn("snow, ice", note)
+        self.assertIn("watches and warnings", note)
+        self.assertIn(f"({weather_alerts.NWS_URL})", note)
+        self.assertTrue(weather_alerts.NWS_URL.startswith("https://www.weather.gov/"))
+        self.assertNotIn("api.weather.gov", weather_alerts.NWS_URL)
 
 
 if __name__ == "__main__":

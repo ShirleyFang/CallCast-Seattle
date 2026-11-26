@@ -6,7 +6,7 @@ Run: uv run python -m unittest discover -s tests -v
 
 import os
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from unittest import mock
 
 os.environ.setdefault("STREAMLIT_LOGGER_LEVEL", "error")
@@ -16,10 +16,12 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 
 import weather_alerts  # noqa: E402
 from app_data import ROOT  # noqa: E402
-from weather_alerts import MESSAGES, NOTE  # noqa: E402
+from weather_alerts import MESSAGES, NOTE, NWS_NOTE  # noqa: E402
 
 # 2026-03-11: the saved day-3 forecast has gusts of 65 km/h or more, so it has a wind alert
 WINDY = date(2026, 3, 11)
+# tomorrow's shift is always within the 4 days that get the NWS note
+TOMORROW = date.today() + timedelta(days=1)
 
 
 def run_app(day):
@@ -56,6 +58,33 @@ class WeatherAlertOnScreenTests(unittest.TestCase):
         app = run_app(date(2026, 10, 31))
         self.assertIn(MESSAGES["unavailable"], [c.value for c in app.caption])
         self.assertNotIn(MESSAGES["wind"], [w.value for w in app.warning])
+
+    def test_nws_note_under_an_alert(self):
+        wind = {"status": "alert", "messages": [MESSAGES["wind"]], "source": "live"}
+        with mock.patch.object(weather_alerts, "get_weather_alerts", return_value=wind):
+            app = run_app(TOMORROW)
+        captions = [c.value for c in app.caption]
+        self.assertIn(MESSAGES["wind"], [w.value for w in app.warning])
+        self.assertIn(NWS_NOTE, captions)
+        self.assertGreater(captions.index(NWS_NOTE), captions.index(NOTE))
+
+    def test_nws_note_without_an_alert(self):
+        # offline, so our forecast is unavailable; the NWS note still shows
+        app = run_app(TOMORROW)
+        self.assertIn(MESSAGES["unavailable"], [c.value for c in app.caption])
+        self.assertIn(NWS_NOTE, [c.value for c in app.caption])
+
+    def test_no_nws_note_for_a_past_shift(self):
+        app = run_app(WINDY)
+        self.assertNotIn(NWS_NOTE, [c.value for c in app.caption])
+
+    def test_weather_captions_have_no_percentages(self):
+        app = run_app(TOMORROW)
+        weather = {NOTE, NWS_NOTE, *MESSAGES.values()}
+        shown = [c.value for c in app.caption if c.value in weather]
+        self.assertIn(NWS_NOTE, shown)
+        for text in shown:
+            self.assertNotIn("%", text)
 
 
 class WeatherSubTabTests(unittest.TestCase):

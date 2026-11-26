@@ -648,6 +648,12 @@ shift." or, if the forecast cannot be read, "Weather forecast unavailable right
 now." Like event warnings, weather alerts never change the estimate or the
 range.
 
+For every shift that is not over yet and ends within 4 days, one more caption
+points to the official watches and warnings, with or without an alert: "For
+snow, ice and the latest official watches and warnings, check the National
+Weather Service: NWS Seattle." It is only a link to
+https://www.weather.gov/sew/; the app does not call the NWS API.
+
 ## 17. What the app does not do
 
 The app does not:

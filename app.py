@@ -31,7 +31,7 @@ from station_areas import (
 from event_explore import show_event_effects
 from event_warnings import get_event_warnings
 from weather_alerts import NOTE as WEATHER_NOTE
-from weather_alerts import get_weather_alerts
+from weather_alerts import NWS_NOTE, get_weather_alerts, show_nws
 from weather_explore import show_weather_effects
 from station_compare import (
     CALL_TYPES,
@@ -306,13 +306,17 @@ with prediction_tab:
             st.caption("Event warnings are informational and are not included in the forecast.")
 
         # Weather alerts work the same way: shown under the estimate, never part of it.
-        weather = get_weather_alerts(target_date, pd.Timestamp.now(tz="America/Los_Angeles").tz_localize(None))
+        now = pd.Timestamp.now(tz="America/Los_Angeles").tz_localize(None)
+        weather = get_weather_alerts(target_date, now)
         if weather["status"] == "alert":
             for alert in weather["messages"]:
                 st.warning(alert)
             st.caption(WEATHER_NOTE)
         else:
             st.caption(weather["messages"][0])
+        # Snow and ice are not in our alerts, so point to the official NWS ones for upcoming shifts.
+        if show_nws(target_date, now):
+            st.caption(NWS_NOTE)
 
         # Add lat/lon from sfd_stations.csv to put each station's estimate on the map.
         map_data = stations.merge(

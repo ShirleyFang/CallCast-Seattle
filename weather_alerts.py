@@ -10,6 +10,9 @@ Which forecast is used, so the alert matches what was known at the planning time
     stored         shifts covered by data/weather_hourly_gfs_global_day3.csv (step8_weather.py)
     previous_runs  later shifts whose planning time has passed: the archived GFS day-3 forecast
     live           planning time still ahead and the shift within ALERT_DAYS: the latest forecast
+Under the alerts, show_nws(target_date, now) says when to point to the official NWS watches and
+warnings (a link only, no NWS API): for every shift not yet over and within ALERT_DAYS, alert or not,
+since our forecast has no snow or ice.
 Thresholds and their check: README Step 15 (a) and (e), scripts/check_alert_thresholds.py.
 With CALLCAST_OFFLINE=1 (set by the tests) nothing is downloaded: those shifts show "unavailable".
 """
@@ -56,6 +59,12 @@ MESSAGES = {
 NOTE = (
     "Weather alerts are informational and are not included in the forecast. "
     "Forecasts a few days ahead often change."
+)
+
+NWS_URL = "https://www.weather.gov/sew/"
+NWS_NOTE = (
+    "For snow, ice and the latest official watches and warnings, check the National Weather Service: "
+    f"[NWS Seattle]({NWS_URL})."
 )
 
 
@@ -149,3 +158,10 @@ def get_weather_alerts(target_date, now, root=ROOT, fetch=None):
     if not messages:
         return {"status": "clear", "messages": [MESSAGES["clear"]], "source": source}
     return {"status": "alert", "messages": messages, "source": source}
+
+
+def show_nws(target_date, now):
+    """True if the shift is not over yet and ends within ALERT_DAYS of `now` (Seattle local time)."""
+    shift_end = pd.Timestamp(target_date).normalize() + pd.Timedelta(days=1, hours=8)
+    now = pd.Timestamp(now)
+    return now < shift_end <= now + pd.Timedelta(days=ALERT_DAYS)
