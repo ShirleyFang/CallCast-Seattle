@@ -21,11 +21,12 @@ from app_data import (
     validate_predictions,
 )
 from station_areas import (
+    AREA_LAYER_ID,
     area_map,
+    area_selection,
     build_station_areas,
     load_boundary,
     recent_averages,
-    selected_stations,
     shade,
     value_map,
 )
@@ -97,6 +98,11 @@ PICK_KEY = "compare_stations"
 MAP_KEY = "prediction_map"
 # The map's clicked areas at the last run, to tell which area a new click changed.
 CLICKED_KEY = "map_clicked"
+PICK_GEN_KEY = "prediction_map_gen"
+EXPLORE_PICK_KEY = "explore_stations"
+EXPLORE_MAP_KEY = "station_area_map"
+EXPLORE_CLICKED_KEY = "explore_map_clicked"
+EXPLORE_GEN_KEY = "explore_map_gen"
 # Light gold behind the picked stations' rows in the table.
 PICK_HIGHLIGHT = "background-color: #F3E3B8"
 
@@ -114,6 +120,30 @@ LINKS = (
 st.set_page_config(page_title="CallCast Seattle", layout="wide")
 # Hover colors and the hand cursor for clickable parts live in style.css.
 st.html(f"<style>{(ROOT / 'style.css').read_text()}</style>")
+
+
+def sync_map_picks(state, map_key, pick_key, clicked_key, gen_key):
+    # Read clicks from the map's current layer and rotate its id so Streamlit clears the
+    # clicked fill highlight before the next run (otherwise a refused click stays coloured).
+    layer, on_map = area_selection(state.get(map_key))
+    gen, prev_layer = state.get(gen_key, (0, None))
+    current = AREA_LAYER_ID if gen == 0 else f"{AREA_LAYER_ID}-{gen}"
+    prev = state.get(clicked_key, []) if layer and layer == prev_layer else []
+    # Sorted so two clicks that land in one run always give the same result.
+    clicked = sorted(set(on_map) ^ set(prev)) if layer else []
+    state[clicked_key] = on_map
+    refused = []
+    picks = list(state.get(pick_key, []))
+    if clicked:
+        picks, refused = toggle_picks(picks, clicked)
+    # Saved on every run: on a date with no estimate the list is not drawn, and Streamlit
+    # would otherwise drop the picks with it.
+    state[pick_key] = picks
+    if on_map and layer == current:
+        gen += 1
+    state[gen_key] = (gen, layer)
+    next_layer = AREA_LAYER_ID if gen == 0 else f"{AREA_LAYER_ID}-{gen}"
+    return picks, refused, next_layer
 
 
 @st.cache_data
@@ -277,20 +307,9 @@ with prediction_tab:
         if not history.empty
         else "No completed shifts before the planning time yet."
     )
-    # The map keeps its own clicked areas, but the multiselect is the only place the picked
-    # stations are kept: an area whose click state changed since the last run was clicked
-    # once, and that click picks or unpicks its station.
-    on_map = selected_stations(st.session_state.get(MAP_KEY))
-    # Sorted so two clicks that land in one run always give the same result.
-    clicked = sorted(set(on_map) ^ set(st.session_state.get(CLICKED_KEY, [])))
-    st.session_state[CLICKED_KEY] = on_map
-    refused = []
-    picks = st.session_state.get(PICK_KEY, [])
-    if clicked:
-        picks, refused = toggle_picks(picks, clicked)
-    # Saved on every run: on a date with no estimate the list is not drawn, and Streamlit
-    # would otherwise drop the picks with it.
-    st.session_state[PICK_KEY] = picks
+    picks, refused, map_layer_id = sync_map_picks(
+        st.session_state, MAP_KEY, PICK_KEY, CLICKED_KEY, PICK_GEN_KEY
+    )
     picked = picks
     view = None
     try:
@@ -354,7 +373,7 @@ with prediction_tab:
             for name, r in by_station.iterrows()
         }
         outlines = {name: station_color(picked, name, alpha=255) for name in picked}
-        # The key keeps the clicked areas when the date, and with it the shading, changes.
+        # The key keeps the map mounted when the date, and with it the shading, changes.
         st.pydeck_chart(
             area_map(
                 areas,
@@ -366,6 +385,7 @@ with prediction_tab:
                 details=hover,
                 tooltip_html="<b>{Station}</b><br/>Expected {expected} calls<br/>"
                 "Likely range {range}<br/>Usual {usual}",
+                layer_id=map_layer_id,
             ),
             on_select="rerun",
             selection_mode="multi-object",
@@ -480,8 +500,9 @@ with prediction_tab:
                 st.info(str(exc))
     else:
         picked = []
-        # The map is gone, and with it its clicked areas.
+        # The map is gone, so reset its click tracking while keeping PICK_KEY.
         st.session_state[CLICKED_KEY] = []
+        st.session_state[PICK_GEN_KEY] = (0, None)
         # Keep the station location map available when no estimate can be produced.
         st.info(
             "No estimate for this shift yet. The station map and history are still below."
@@ -615,7 +636,7 @@ with explore_tab:
     with stations_view:
         # Station area map: city boundary and nearest-station areas, with recent averages on hover.
         st.markdown("##### Station areas")
-        picked = []
+        picked, refused = [], []
         if not history.empty:
             areas, boundary = read_station_areas(stamps[0])
             # Shade each area by the share of its calls of one type (shares, not counts, so
@@ -627,12 +648,16 @@ with explore_tab:
             shares, city_share = station_shares(history, share_column)
             share_word = share_choice.split()[0]
             hover = {s: f"{share_word} share: {v:.0f}% (city {city_share:.0f}%)" for s, v in shares.items()}
-            # The map is drawn before this run's click is read, so outline the areas picked so far
-            # (kept by Streamlit under the chart's key) in the same colours as the charts below.
-            before = selected_stations(st.session_state.get("station_area_map"))[:MAX_COMPARE]
-            outlines = {name: station_color(before, name, alpha=255) for name in before}
+            picked, refused, explore_layer_id = sync_map_picks(
+                st.session_state,
+                EXPLORE_MAP_KEY,
+                EXPLORE_PICK_KEY,
+                EXPLORE_CLICKED_KEY,
+                EXPLORE_GEN_KEY,
+            )
+            outlines = {name: station_color(picked, name, alpha=255) for name in picked}
             # Click areas to pick stations; clicking a picked area again unpicks it.
-            event = st.pydeck_chart(
+            st.pydeck_chart(
                 area_map(
                     areas,
                     boundary,
@@ -641,12 +666,12 @@ with explore_tab:
                     fills=shade(shares),
                     picked_colors=outlines,
                     extra=hover,
+                    layer_id=explore_layer_id,
                 ),
                 on_select="rerun",
                 selection_mode="multi-object",
-                key="station_area_map",
+                key=EXPLORE_MAP_KEY,
             )
-            picked = selected_stations(event)
             high = shares.nlargest(2)
             st.caption(
                 f"Darker areas have a larger share of {share_word.lower()} calls: from "
@@ -657,12 +682,16 @@ with explore_tab:
                 f"week and month. Click up to {MAX_COMPARE} areas to compare them (outlined in "
                 "color); click an area again to remove it."
             )
-        if len(picked) > MAX_COMPARE:
+        else:
+            st.session_state[EXPLORE_CLICKED_KEY] = []
+            st.session_state[EXPLORE_GEN_KEY] = (0, None)
+        if refused:
+            verb = "was" if len(refused) == 1 else "were"
             st.warning(
-                f"You picked {len(picked)} stations ({', '.join(picked)}). Up to {MAX_COMPARE} can "
-                "be compared at once: click an area again to remove it."
+                f"Up to {MAX_COMPARE} stations can be compared at once, so {', '.join(refused)} "
+                f"{verb} not added. Click a picked area again to remove it."
             )
-        elif picked:
+        if picked:
             # 1 to MAX_COMPARE picked stations, each chart with the average station as a reference.
             st.subheader(
                 picked[0] if len(picked) == 1 else "Comparing " + ", ".join(picked)

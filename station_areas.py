@@ -34,13 +34,21 @@ RECENT_WINDOWS = {"week": 7, "month": 28}  # shifts averaged for the hover text
 AREA_LAYER_ID = "station-areas"  # the clickable layer; the app reads the selection from it
 
 
+def area_selection(event):
+    # Return (layer_id, clicked station names) from st.pydeck_chart's selection state.
+    if event is None:
+        return None, []
+    objects_by_layer = event.get("selection", {}).get("objects", {})
+    for key, objects in objects_by_layer.items():
+        if key == AREA_LAYER_ID or key.startswith(f"{AREA_LAYER_ID}-"):
+            names = [o.get("properties", {}).get("Station") for o in objects]
+            return key, list(dict.fromkeys(n for n in names if n))
+    return None, []
+
+
 def selected_stations(event):
     # Read clicked station names from st.pydeck_chart's selection state, keeping order.
-    if event is None:
-        return []
-    objects = event.get("selection", {}).get("objects", {}).get(AREA_LAYER_ID, [])
-    names = [o.get("properties", {}).get("Station") for o in objects]
-    return list(dict.fromkeys(n for n in names if n))  # keep order, drop repeats
+    return area_selection(event)[1]
 
 
 def to_km(coords):
@@ -226,7 +234,7 @@ def picked_outline_layers(areas, picked_colors):
 
 
 def area_map(areas, boundary, stations, averages, fills=None, picked_colors=None, extra=None,
-             details=None, tooltip_html=None):
+             details=None, tooltip_html=None, layer_id=AREA_LAYER_ID):
     """pydeck map: city outline, station areas, station dots, hover.
 
     fills shades the areas (e.g. by fire share; nearly clear if not given). Picked stations get
@@ -234,12 +242,12 @@ def area_map(areas, boundary, stations, averages, fills=None, picked_colors=None
     details and tooltip_html replace the whole hover text (the tooltip fills {names} from
     each station's details).
     """
-    # Fixed layer ids: Streamlit needs them to keep the clicked areas selected across reruns.
+    # Rotating layer_id clears Streamlit's clicked fill highlight after each map click.
     city_layer = _city_layer(boundary, "city-boundary")
     area_layer = pdk.Layer(
         "GeoJsonLayer",
         {"type": "FeatureCollection", "features": area_features(areas, averages, fills, extra, details)},
-        id=AREA_LAYER_ID,
+        id=layer_id,
         stroked=True,
         filled=True,
         # Each feature carries its own fill: its shade, or nearly clear (so the whole area,

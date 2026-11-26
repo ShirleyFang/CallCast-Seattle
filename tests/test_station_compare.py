@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from app_data import known_history, load_tables
-from station_areas import AREA_LAYER_ID, selected_stations
+from station_areas import AREA_LAYER_ID, area_selection, selected_stations
 from station_compare import (
     AVERAGE,
     BAR_COLOR,
@@ -249,6 +249,9 @@ class SelectionTests(unittest.TestCase):
         event = {"selection": {"objects": {AREA_LAYER_ID: [area("SFD 5"), area("SFD 22"), area("SFD 5")],
                                            "station-dots": [{"station": "SFD 9"}]}}}
         self.assertEqual(selected_stations(event), ["SFD 5", "SFD 22"])
+        self.assertEqual(area_selection(event), (AREA_LAYER_ID, ["SFD 5", "SFD 22"]))
+        rotated = {"selection": {"objects": {f"{AREA_LAYER_ID}-3": [area("SFD 10")]}}}
+        self.assertEqual(area_selection(rotated), (f"{AREA_LAYER_ID}-3", ["SFD 10"]))
         self.assertEqual(selected_stations(None), [])
         self.assertEqual(selected_stations({"selection": {"objects": {}}}), [])
 

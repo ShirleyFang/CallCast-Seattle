@@ -908,6 +908,67 @@ class PredictionTabTests(unittest.TestCase):
             self.assertNotIn(word, text)
         self.assertEqual(len([c for c in app.caption if c.value.startswith("Long-range estimate:")]), 1)
 
+    def _pickable_id(self, tab):
+        spec = json.loads(tab.get("deck_gl_json_chart")[0].proto.json)
+        return next(l["id"] for l in spec["layers"] if l.get("pickable"))
+
+    def _tap_layer(self, app, map_key, layer_id, names):
+        objects = {layer_id: [{"properties": {"Station": n}} for n in names]}
+        app.session_state[map_key] = {"selection": {"objects": objects, "indices": {}}}
+        return app.run(timeout=60)
+
+    def test_rotated_map_layer_clears_refused_click_and_list_unpick(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+        for name in ["SFD 10", "SFD 2", "SFD 25"]:
+            lid = self._pickable_id(app.tabs[0])
+            self._tap_layer(app, "prediction_map", lid, [name])
+        first_id = self._pickable_id(app.tabs[0])
+        self._tap_layer(app, "prediction_map", first_id, ["SFD 5"])
+        # Refusing the 4th click rotates the layer id so Streamlit clears the clicked highlight.
+        self.assertNotEqual(self._pickable_id(app.tabs[0]), first_id)
+        self.assertEqual(app.multiselect[0].value, ["SFD 10", "SFD 2", "SFD 25"])
+        self.assertTrue(any("SFD 5 was not added" in w.value for w in app.warning))
+        # Removing SFD 10 from the list and clicking it again on the map picks it cleanly.
+        app.multiselect[0].set_value(["SFD 2", "SFD 25"]).run(timeout=60)
+        self._tap_layer(app, "prediction_map", self._pickable_id(app.tabs[0]), ["SFD 10"])
+        self.assertEqual(app.multiselect[0].value, ["SFD 2", "SFD 25", "SFD 10"])
+
+    def test_two_quick_clicks_in_one_layer_generation_pick_both(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+        lid = self._pickable_id(app.tabs[0])
+        self._tap_layer(app, "prediction_map", lid, ["SFD 10"])
+        # A second click before the browser resets the layer still sends the old layer id.
+        self._tap_layer(app, "prediction_map", lid, ["SFD 10", "SFD 2"])
+        self.assertEqual(app.multiselect[0].value, ["SFD 10", "SFD 2"])
+
+    def test_map_picks_and_click_state_survive_gap_date(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+        lid = self._pickable_id(app.tabs[0])
+        self._tap_layer(app, "prediction_map", lid, ["SFD 10"])
+        app.sidebar.date_input[0].set_value(date(2026, 1, 9)).run(timeout=60)
+        app.sidebar.date_input[0].set_value(date(2026, 10, 24)).run(timeout=60)
+        self.assertEqual(app.multiselect[0].value, ["SFD 10"])
+        # After returning from a gap date, clicking SFD 10 unpicks it.
+        self._tap_layer(app, "prediction_map", self._pickable_id(app.tabs[0]), ["SFD 10"])
+        self.assertEqual(app.multiselect[0].value, [])
+
+    def test_explore_stations_map_refuses_fourth_click_and_keeps_three(self):
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
+        stations = next(t for t in app.tabs if t.label == "Stations")
+        for name in ["SFD 10", "SFD 2", "SFD 25"]:
+            lid = self._pickable_id(stations)
+            self._tap_layer(app, "station_area_map", lid, [name])
+            stations = next(t for t in app.tabs if t.label == "Stations")
+        before_id = self._pickable_id(stations)
+        self._tap_layer(app, "station_area_map", before_id, ["SFD 5"])
+        stations = next(t for t in app.tabs if t.label == "Stations")
+        self.assertNotEqual(self._pickable_id(stations), before_id)
+        self.assertTrue(any("SFD 5 was not added" in w.value for w in stations.warning))
+        self.assertIn("Comparing SFD 10, SFD 2, SFD 25", [s.value for s in stations.subheader])
+        self._tap_layer(app, "station_area_map", self._pickable_id(stations), ["SFD 10"])
+        stations = next(t for t in app.tabs if t.label == "Stations")
+        self.assertIn("Comparing SFD 2, SFD 25", [s.value for s in stations.subheader])
+
 
 if __name__ == "__main__":
     unittest.main()
