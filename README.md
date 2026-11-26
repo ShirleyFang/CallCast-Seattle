@@ -25,7 +25,7 @@ The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is 
 
 | Step         | File                                | Input → output                                                                                            |
 | ------------ | ----------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Cleaning     | `notebooks/data_clean.ipynb`        | raw export → `data/station_shift_counts.csv`                                                              |
+| Cleaning     | `notebooks/data_clean.ipynb`        | raw export → `data/station_shift_counts.csv`, `data/city_shift_call_types.csv`                            |
 | Step 1       | `scripts/step1_inspect.py`          | `station_shift_counts.csv` → structure checks (printed)                                                   |
 | Step 2       | `scripts/step2_sec2.py`             | `station_shift_counts.csv` → target distribution and histogram (proposal Section 2)                       |
 | Step 3       | `scripts/step3_baseline.py`         | `station_shift_counts.csv` → baseline scores (proposal Section 3)                                         |
@@ -60,6 +60,7 @@ Scripts run from the repository root (`uv run python scripts/<name>.py`). Notebo
 - Assigns each call to its nearest station (`data/sfd_stations.csv`) and to its shift (a call at 03:00 belongs to the previous day's shift).
 - Flags shifts with a data-feed outage (an hour with no call anywhere in the city) as `Masked`.
 - Saves one row per station per shift, with 0 when there was no call: the total `calls`, a count per group, and `Masked`.
+- Also saves `data/city_shift_call_types.csv` for Explore > Weather: one row per shift for 2022–2025 (2026 is the test year), all stations added up, with `calls`, `Masked` and a count per call type: `medical_bls`, `medical_als`, `fire`, `alarm`, `water_job` (leaks, burst pipes), `wires_down`, `rescue`, `traffic` and `other`. Some codes changed within 2022–2025 (gas and odor codes stop in 2024, new dispatch codes start in 2024), so those and other hard-to-read types go into `other`. The columns add up to `calls`, and `fire` + `alarm` and the two medical columns match `station_shift_counts.csv`.
 
 ### Step 1: Inspect the table (`scripts/step1_inspect.py`)
 
