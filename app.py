@@ -30,6 +30,9 @@ from station_areas import (
 )
 from event_explore import show_event_effects
 from event_warnings import get_event_warnings
+from weather_alerts import NOTE as WEATHER_NOTE
+from weather_alerts import NWS_NOTE, get_weather_alerts, show_nws
+from weather_explore import show_weather_effects
 from station_compare import (
     CALL_TYPES,
     CITY,
@@ -302,6 +305,19 @@ with prediction_tab:
         if event_warnings:
             st.caption("Event warnings are informational and are not included in the forecast.")
 
+        # Weather alerts work the same way: shown under the estimate, never part of it.
+        now = pd.Timestamp.now(tz="America/Los_Angeles").tz_localize(None)
+        weather = get_weather_alerts(target_date, now)
+        if weather["status"] == "alert":
+            for alert in weather["messages"]:
+                st.warning(alert)
+            st.caption(WEATHER_NOTE)
+        else:
+            st.caption(weather["messages"][0])
+        # Snow and ice are not in our alerts, so point to the official NWS ones for upcoming shifts.
+        if show_nws(target_date, now):
+            st.caption(NWS_NOTE)
+
         # Add lat/lon from sfd_stations.csv to put each station's estimate on the map.
         map_data = stations.merge(
             view, left_on="station", right_on="Station", validate="one_to_one"
@@ -406,9 +422,9 @@ with explore_tab:
                 note + " (the last one finished by the planning time), without shifts that have "
                 "missing data."
             )
-    # Three views of the same history: the whole city (default), station areas and
-    # comparisons, and past events.
-    city_view, stations_view, events_view = st.tabs(["Citywide", "Stations", "Events"])
+    # Four views: the whole city (default), station areas and comparisons, past events,
+    # and past weather.
+    city_view, stations_view, events_view, weather_view = st.tabs(["Citywide", "Stations", "Events", "Weather"])
     with city_view:
         if history.empty:
             st.info("No history is available for this selection.")
@@ -598,6 +614,9 @@ with explore_tab:
     with events_view:
         # Past event effects: a venue map over the same station areas, then the tables.
         show_event_effects(st, *read_station_areas(stamps[0]))
+    with weather_view:
+        # Past weather effects for the whole city, from data/weather_*.csv.
+        show_weather_effects(st)
 
 with about_tab:
     # Text only: sources and links, what the numbers mean, what is left out, and what they don't show.

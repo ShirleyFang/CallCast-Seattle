@@ -23,10 +23,11 @@ The app has three tabs:
 
 1. **Prediction** - choose a date and station, see point estimates and ranges,
    view the map and download the table.
-2. **Explore** - three sub-tabs of past patterns: **Citywide** (map, last 90
+2. **Explore** - four sub-tabs of past patterns: **Citywide** (map, last 90
    days, weekday, month and call type), **Stations** (station-area map; click
-   up to 3 areas to compare them) and **Events** (how calls changed near the
-   venues on past event days).
+   up to 3 areas to compare them), **Events** (how calls changed near the
+   venues on past event days) and **Weather** (calls on cold and hot days,
+   during cold spells and in past weather events).
 3. **Data and limits** - read the source, definitions, left-out data and
    limitations.
 
@@ -504,7 +505,7 @@ note at the top says which shifts it uses. For a date more than 3 days past
 the last counts, the note becomes a blue info box: every later date shows the
 same history until new calls are added.
 
-Explore has three sub-tabs. Every chart has a one-line caption on how to read
+Explore has four sub-tabs. Every chart has a one-line caption on how to read
 it.
 
 ### Citywide
@@ -538,6 +539,26 @@ from `data/event_effects.csv` and `data/event_shifts.csv`, made by
 `scripts/make_event_effects.py`). The numbers use 2022 to 2025 and do not
 change with the selected date. The call types are for browsing past incident
 mix only. The model uses total calls, not separate category targets.
+
+### Weather
+
+Three charts of how citywide calls changed with the weather
+(`weather_explore.py`, from `data/weather_effects.csv`,
+`data/weather_events.csv` and `data/weather_event_shifts.csv`, made by
+`scripts/make_weather_effects.py`). Each compares calls with a usual day: the
+same weekday up to 4 weeks before and after, without extreme-weather days and
+holidays. The numbers use 2022 to 2025 and do not change with the selected
+date.
+
+* **Calls on cold and hot days**: one bar per temperature group, from the
+  coldest lows to the hottest highs. Holidays are left out.
+* **Calls during a cold spell**: a single cold day, then day 1, 2, 3 and 4 or
+  later of a spell (2 or more days in a row below freezing).
+* **Past weather events**: pick one of four events (December 2022 cold, snow
+  and ice; January 2024 cold snap; July 2022 heat wave; November 2024
+  windstorm). The line shows each day's citywide calls from a week before to
+  a week after, the dashed line the usual level, and the shaded days the
+  event. The dates were checked in the weather data.
 
 ## 15. Data and limits tab
 
@@ -601,6 +622,38 @@ says "Event warnings are informational and are not included in the
 forecast." Every estimate also says "The estimate does not include weather or
 events such as games."
 
+## 16c. Weather alerts
+
+Under the event warnings, the Prediction tab shows a yellow weather alert when
+the forecast for the shift has strong wind (gusts of 65 km/h or more) or hard
+cold (a low of -3 °C or colder, or -1 °C or colder on 2 or more days in a row).
+The thresholds come from Step 15 in the README. The text is plain, with no
+percentages, for example "Strong wind is forecast for this shift. Windstorms
+usually bring more calls than usual." A caption under it says "Weather alerts
+are informational and are not included in the forecast. Forecasts a few days
+ahead often change." This is the same wording as the event warnings.
+
+`weather_alerts.py` picks the forecast that was known at the planning time:
+
+* dates with a saved forecast (to October 29, 2026) use the day-3 forecast in
+  `data/weather_hourly_gfs_global_day3.csv`;
+* later dates whose planning time has passed download that same day-3
+  forecast from Open-Meteo's archive;
+* dates still ahead use the latest Open-Meteo forecast (`gfs_seamless`), but
+  only when the shift ends within 4 days.
+
+Without an alert, a caption says "No weather alerts for this shift.", "No
+weather forecast available yet. Weather alerts appear about 4 days before the
+shift." or, if the forecast cannot be read, "Weather forecast unavailable right
+now." Like event warnings, weather alerts never change the estimate or the
+range.
+
+For every shift that is not over yet and ends within 4 days, one more caption
+points to the official watches and warnings, with or without an alert: "For
+snow, ice and the latest official watches and warnings, check the National
+Weather Service: NWS Seattle." It is only a link to
+https://www.weather.gov/sew/; the app does not call the NWS API.
+
 ## 17. What the app does not do
 
 The app does not:
@@ -652,6 +705,7 @@ predictions. It does not run `.fit()` or retrain on the supervisor's clicks.
 4. Pick October 29. Confirm it is labelled Forecast and has a planning time of October 27 at 08:00.
 5. Pick October 31. Confirm the hourly note instead of 24 hourly bars.
 6. Pick October 25 at SFD 10. Confirm the Seahawks warning; switch to SFD 5 and confirm it is gone.
-7. Open Explore. On Citywide pick Medical, on Stations click two areas to compare them, then open Events.
-8. Open Data and limits and locate each source and limitation.
-9. Download a table and compare its values with the on-screen table.
+7. Pick March 11. Confirm the strong-wind alert under the estimate.
+8. Open Explore. On Citywide pick Medical, on Stations click two areas to compare them, then open Events and Weather.
+9. Open Data and limits and locate each source and limitation.
+10. Download a table and compare its values with the on-screen table.
