@@ -1,114 +1,1174 @@
-/* Hover feedback for everything you can click. Colors match .streamlit/config.toml. */
+/* Calm civic styling, elevated cards, equal-height card rows and top-bar layout.
+   Colours are the --cc-* variables that app.py adds from chart_theme.py. */
 
-/* Hand cursor on anything clickable */
+/* Lexend for the message sentences (Figtree, the main font, is set in .streamlit/config.toml).
+   An @import must be the first rule, so app.py puts this file before the colour variables. */
+@import url("https://fonts.googleapis.com/css2?family=Lexend:wght@400;500&display=swap");
+
+/* Hide the sidebar and its toggle completely; date controls live in the top bar. */
+[data-testid="stSidebar"],
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="stExpandSidebarButton"] {
+  display: none !important;
+}
+
+/* Keep the top bar close to the top of the page. */
+[data-testid="stMainBlockContainer"] {
+  padding-top: 1.35rem;
+}
+
+/* Captions at full strength: Streamlit's 60% opacity left them under 4.5:1 contrast. */
+[data-testid="stCaptionContainer"] {
+  opacity: 1 !important;
+  color: var(--cc-muted) !important;
+}
+
+/* Text sizes all come from the --fs-* scale (TYPE_SCALE in chart_theme.py): body 17 px,
+   captions, labels, buttons and pickers 16 px, card numbers 38 px, nothing under 14 px. */
+[data-testid="stMarkdownContainer"] :is(p, li) {
+  font-size: var(--fs-md);
+  line-height: 1.55;
+}
+
+[data-testid="stCaptionContainer"],
+[data-testid="stCaptionContainer"] p {
+  font-size: var(--fs-base) !important;
+  line-height: 1.5;
+}
+
+[data-testid="stWidgetLabel"] p {
+  font-size: var(--fs-base) !important;
+  font-weight: 600;
+}
+
+/* Buttons and picker options: 16 px at weight 600, with room around the label. */
+:is([data-testid^="stBaseButton"], [data-variant="segmented_control"]) {
+  min-height: 2.75rem;
+  padding: 0.5rem 1.1rem;
+}
+
+:is([data-testid^="stBaseButton"], [data-variant="segmented_control"]) p {
+  font-size: var(--fs-base);
+  font-weight: 600;
+}
+
+/* Tab labels take the size and weight set on the tab itself below. */
+[role="tab"] [data-testid="stMarkdownContainer"] p {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/* Drop-down fields, their options, picked tags and the date field. */
+:is([data-baseweb="select"], [data-baseweb="input"]) :is(div, input, span),
+[role="option"],
+[role="option"] * {
+  font-size: var(--fs-base);
+}
+
+[data-baseweb="tag"] span {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+[data-testid="stExpander"] summary p {
+  font-size: var(--fs-md);
+}
+
+[data-testid="stMetricLabel"] p {
+  font-size: var(--fs-base);
+}
+
+[data-testid="stMetricValue"] {
+  font-size: var(--fs-num);
+  font-weight: 700;
+}
+
+[data-testid="stMetricDelta"] {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+/* Numbers, changes and window titles keep their own size, not the body size set above. */
+:is([data-testid="stMetricValue"], [data-testid="stMetricDelta"], h1, h2, h3, h4) p {
+  font-size: inherit;
+}
+
+/* The map's "(c) OpenStreetMap" credit. */
+:is(.maplibregl-ctrl-attrib, .mapboxgl-ctrl-attrib) {
+  font-size: var(--fs-xs);
+}
+
+[data-testid="stTooltipContent"] {
+  font-size: var(--fs-sm);
+}
+
+/* Lexend (MESSAGE_FONT in chart_theme.py) for the weather and event alert sentences. */
+.st-key-prediction_weather [data-testid="stAlert"] p,
+[class*="st-key-card_compare_"] [data-testid="stAlert"] p {
+  font-family: "Lexend", "Figtree", sans-serif;
+}
+
+/* Hand cursor on clickable parts */
 button,
 a,
 summary,
-label:has(input[type="radio"]),
 [role="tab"],
 [role="option"],
 [role="gridcell"],
-[data-testid="stSelectbox"] > div[data-rac],
-[data-testid="stSelectbox"] > div[data-rac] *,
 [data-testid="stDateInputField"],
 [data-testid="stDateInputField"] * {
   cursor: pointer !important;
 }
 
-/* Buttons: lift a little and darken */
+/* The UI sounds script (ui_sounds.py) takes no room on the page */
+.st-key-ui_sounds {
+  display: none !important;
+}
+
+/* Sky header bar with dark ink and a darkened salmon top edge: a soft blue gradient, a light
+   haze along the top and three white wisps low down, so it looks whole with no pictures. */
+.st-key-top_bar {
+  background-color: var(--cc-sky-mid);
+  background-image:
+    radial-gradient(ellipse 18% 42% at 12% 92%, var(--cc-sky-wisp), transparent 72%),
+    radial-gradient(ellipse 22% 38% at 48% 96%, var(--cc-sky-haze), transparent 72%),
+    radial-gradient(ellipse 16% 40% at 84% 100%, var(--cc-sky-wisp), transparent 72%),
+    linear-gradient(to bottom, var(--cc-sky-haze), transparent 55%),
+    linear-gradient(115deg, var(--cc-sky-top) 0%, var(--cc-sky-mid) 40%, var(--cc-sky-low) 100%);
+  border: 1px solid var(--cc-header-edge);
+  border-top: 4px solid var(--cc-accent);
+  border-radius: 10px;
+  padding: 0.75rem 1.15rem 0.65rem 1.15rem;
+  margin-bottom: 0.5rem;
+  box-shadow: 0 2px 6px var(--cc-shadow);
+}
+
+.st-key-top_bar h3 {
+  margin: 0;
+  line-height: 1.15;
+  color: var(--cc-ink) !important;
+}
+
+.st-key-top_bar p,
+.st-key-top_bar label,
+.st-key-top_bar [data-testid="stMarkdownContainer"] {
+  color: var(--cc-ink) !important;
+}
+
+.st-key-top_bar [data-testid="stCaptionContainer"],
+.st-key-top_bar [data-testid="stCaptionContainer"] p {
+  color: var(--cc-header-muted) !important;
+}
+
+.st-key-top_bar [data-testid="stDateInputField"] {
+  background-color: var(--cc-surface) !important;
+  border-color: var(--cc-header-edge) !important;
+}
+
+.st-key-top_bar [data-testid="stDateInputField"] input {
+  color: var(--cc-ink) !important;
+  font-weight: 600;
+}
+
+/* The owner's sun-with-cloud sits still right after the title, a little taller than the text.
+   Hidden from 640 to 767 px, where the title column is too narrow for both on one line. */
+.st-key-top_bar h3 [data-heading-text] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.st-key-top_bar h3 [data-heading-text]::after {
+  content: "";
+  width: 43px;
+  height: 38px;
+  background: url("app/static/weather_icons/header_sun_cloud.png") no-repeat center / contain;
+}
+
+@media (min-width: 640px) and (max-width: 767px) {
+  .st-key-top_bar h3 [data-heading-text]::after {
+    content: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .st-key-top_bar h3 [data-heading-text]::after {
+    width: 34px;
+    height: 30px;
+  }
+}
+
+/* Five pale clouds in three sizes drift behind the header text on wide screens: a big and a
+   middle one overlapping after the title, a small one above the date box, and a big one with
+   a small one tucked behind it in the top right corner. They are local files kept out of git
+   (static/weather_icons); a missing one just draws nothing. Each is its own layer under the
+   text (z-index -1 in the bar) that clicks pass through, so the title, the date box and its
+   calendar always stay on top. Below 1280 px the text fills the bar, so there are no clouds. */
+:root {
+  --cc-cloud-a-drift: 70px;
+  --cc-cloud-a-time: 24s;
+  --cc-cloud-a-delay: -9s;
+  --cc-cloud-b-drift: -90px;
+  --cc-cloud-b-time: 19s;
+  --cc-cloud-b-delay: -17s;
+  --cc-cloud-c-drift: 60px;
+  --cc-cloud-c-time: 22s;
+  --cc-cloud-c-delay: -31s;
+  --cc-cloud-d-drift: -55px;
+  --cc-cloud-d-time: 27s;
+  --cc-cloud-d-delay: -4s;
+  --cc-cloud-e-drift: 50px;
+  --cc-cloud-e-time: 17s;
+  --cc-cloud-e-delay: -12s;
+}
+
+@media (min-width: 1280px) {
+  .st-key-top_bar {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .st-key-top_bar::before,
+  .st-key-top_bar::after,
+  .st-key-top_bar > [data-testid="stLayoutWrapper"]::before,
+  .st-key-top_bar > [data-testid="stLayoutWrapper"]::after,
+  .st-key-top_bar [data-testid="stHorizontalBlock"]::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    pointer-events: none;
+    aspect-ratio: 520 / 340;
+    background: url("app/static/weather_icons/header_cloud.png") no-repeat center / contain;
+    animation: cc-cloud-drift var(--cc-time) ease-in-out var(--cc-delay) infinite alternate;
+    will-change: transform;
+  }
+
+  /* After the title: the big cloud with a middle one over its lower right. */
+  .st-key-top_bar::before {
+    top: 8px;
+    left: 310px;
+    width: 100px;
+    --cc-drift: var(--cc-cloud-a-drift);
+    --cc-time: var(--cc-cloud-a-time);
+    --cc-delay: var(--cc-cloud-a-delay);
+  }
+
+  .st-key-top_bar::after {
+    top: 30px;
+    left: 386px;
+    width: 58px;
+    --cc-drift: var(--cc-cloud-b-drift);
+    --cc-time: var(--cc-cloud-b-time);
+    --cc-delay: var(--cc-cloud-b-delay);
+  }
+
+  /* Above the date box, in the old spot: 63.3% of the room left beside it. */
+  .st-key-top_bar > [data-testid="stLayoutWrapper"]::before {
+    top: 20px;
+    left: calc(63.3% - 25px);
+    width: 40px;
+    --cc-drift: var(--cc-cloud-c-drift);
+    --cc-time: var(--cc-cloud-c-time);
+    --cc-delay: var(--cc-cloud-c-delay);
+  }
+
+  /* Top right corner: a big cloud, and a small one above and behind its left side. */
+  .st-key-top_bar > [data-testid="stLayoutWrapper"]::after {
+    top: 14px;
+    right: 14px;
+    width: 86px;
+    --cc-drift: var(--cc-cloud-d-drift);
+    --cc-time: var(--cc-cloud-d-time);
+    --cc-delay: var(--cc-cloud-d-delay);
+  }
+
+  .st-key-top_bar [data-testid="stHorizontalBlock"]::before {
+    z-index: -2;
+    top: 8px;
+    right: 86px;
+    width: 42px;
+    --cc-drift: var(--cc-cloud-e-drift);
+    --cc-time: var(--cc-cloud-e-time);
+    --cc-delay: var(--cc-cloud-e-delay);
+  }
+}
+
+/* Clouds drift sideways and back. */
+@keyframes cc-cloud-drift {
+  to { transform: translateX(var(--cc-drift)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-key-top_bar::before,
+  .st-key-top_bar::after,
+  .st-key-top_bar > [data-testid="stLayoutWrapper"]::before,
+  .st-key-top_bar > [data-testid="stLayoutWrapper"]::after,
+  .st-key-top_bar [data-testid="stHorizontalBlock"]::before {
+    animation: none;
+  }
+}
+
+/* How clickable things move, in one place (the station table in prediction_cards.py reads
+   these too): a 1 px lift on hover, a quick press to 96%, and the tab tile's slide. Wide rows
+   such as the "How to read" toggles press less, so they do not jump. */
+:root {
+  --cc-lift: -1px;
+  --cc-press: 0.96;
+  --cc-press-wide: 0.99;
+  --cc-hover-time: 0.14s;
+  --cc-press-time: 0.12s;
+  --cc-slide-time: 0.22s;
+}
+
+/* Subtle button hover without glows */
 [data-testid="stBaseButton-primary"],
 [data-testid="stBaseButton-secondary"] {
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  border-radius: 8px;
 }
+
+/* Anything clickable lifts 1 px under a mouse and presses in when clicked or tapped.
+   Phones get the press only: they have no hover. */
+:is([data-testid^="stBaseButton"], [data-variant="segmented_control"],
+  [data-testid="stDialog"] button[aria-label="Close"], .cc-chip,
+  .cc-more summary) {
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    transform var(--cc-hover-time) ease-out;
+}
+
+@media (hover: hover) {
+  :is([data-testid^="stBaseButton"], [data-variant="segmented_control"],
+  [data-testid="stDialog"] button[aria-label="Close"],
+    .cc-chip, .cc-more summary):hover:not(:disabled) {
+    transform: translateY(var(--cc-lift));
+  }
+}
+
+:is([data-testid^="stBaseButton"], [data-variant="segmented_control"],
+  [data-testid="stDialog"] button[aria-label="Close"],
+  .cc-chip):active:not(:disabled) {
+  transform: scale(var(--cc-press));
+  transition-duration: 0.15s, 0.15s, 0.15s, var(--cc-press-time);
+}
+
+.cc-more summary:active {
+  transform: scale(var(--cc-press-wide));
+}
+
 [data-testid="stBaseButton-primary"]:hover {
-  background-color: #7F1D20 !important;
-  border-color: #7F1D20 !important;
-  transform: translateY(-1px);
-  box-shadow: 0 3px 8px rgba(31, 42, 54, 0.25);
+  background-color: var(--cc-accent-dark) !important;
+  border-color: var(--cc-accent-dark) !important;
 }
+
+[data-testid="stBaseButton-secondary"] {
+  background-color: var(--cc-surface) !important;
+  border-color: var(--cc-sage) !important;
+}
+
 [data-testid="stBaseButton-secondary"]:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 3px 8px rgba(31, 42, 54, 0.15);
-}
-[data-testid="stBaseButton-primary"]:active,
-[data-testid="stBaseButton-secondary"]:active {
-  transform: translateY(0);
-  box-shadow: none;
+  background-color: var(--cc-mint) !important;
 }
 
-/* Tabs: tint the background and turn red */
-[role="tab"] {
-  transition: color 0.15s ease, background-color 0.15s ease;
-  border-radius: 0.25rem 0.25rem 0 0;
-}
-[role="tab"]:hover {
-  color: #A4282B !important;
-  background-color: #EFEBE5;
+/* Tabs: a soft rounded bar, an outline icon above each label, and a raised tile under the
+   open tab that slides to the clicked one. The tile is Streamlit's own selection marker: it
+   copies the old tab's place and width, then moves by the transition below. */
+[data-testid="stTabs"] > div > [role="tablist"] {
+  width: fit-content;
+  max-width: 100%;
+  gap: 0.25rem;
+  padding: 0.3rem;
+  border: 1px solid var(--cc-sage);
+  border-radius: 0.9rem;
+  background-color: var(--cc-mint);
 }
 
-/* Station menu and date box: red border on hover */
-[data-testid="stSelectbox"] > div[data-rac],
+[data-testid="stTabs"] > div > [role="tablist"]::after {
+  display: none;
+}
+
+[role="tablist"] > [role="tab"] {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.2rem;
+  height: auto;
+  min-width: 6.5rem;
+  padding: 0.55rem 1.2rem 0.5rem;
+  border-radius: 0.65rem;
+  color: var(--cc-muted);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  transition: color var(--cc-slide-time) ease-out, transform var(--cc-hover-time) ease-out;
+}
+
+[role="tablist"] > [role="tab"]::before {
+  content: "";
+  flex: none;
+  width: 22px;
+  height: 22px;
+  background-color: currentColor;
+  -webkit-mask: var(--cc-icon) center / contain no-repeat;
+  mask: var(--cc-icon) center / contain no-repeat;
+  transition: background-color var(--cc-slide-time) ease-out;
+}
+
+/* Icons and labels sit above the tile, so a lifted tab's tile never covers its neighbours
+   while it slides. */
+[role="tablist"] > [role="tab"]::before,
+[role="tablist"] > [role="tab"] > [data-testid="stMarkdownContainer"] {
+  position: relative;
+  z-index: 1;
+}
+
+[role="tablist"] > [role="tab"][data-hovered],
+[role="tablist"] > [role="tab"][data-selected] {
+  color: var(--cc-ink);
+}
+
+[role="tablist"] > [role="tab"][data-selected]::before {
+  background-color: var(--cc-accent);
+}
+
+@media (hover: hover) {
+  [role="tablist"] > [role="tab"][data-hovered] {
+    transform: translateY(var(--cc-lift));
+  }
+}
+
+[role="tablist"] > [role="tab"]:is([data-pressed], :active) {
+  transform: scale(var(--cc-press));
+  transition-duration: var(--cc-slide-time), var(--cc-press-time);
+}
+
+[role="tablist"] > [role="tab"] .react-aria-SelectionIndicator {
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  border-radius: 0.65rem;
+  box-shadow: 0 0 0 1px var(--cc-sage), 0 1px 2px var(--cc-shadow);
+  transition: translate var(--cc-slide-time) ease-out, width var(--cc-slide-time) ease-out;
+}
+
+[role="tablist"] > [role="tab"][data-selected] .react-aria-SelectionIndicator {
+  background-color: var(--cc-surface);
+}
+
+/* Top tabs: Prediction, Explore, About. */
+[role="tablist"] > [data-key="0"] { --cc-icon: url("app/static/tab_icons/prediction.svg"); }
+[role="tablist"] > [data-key="1"] { --cc-icon: url("app/static/tab_icons/explore.svg"); }
+[role="tablist"] > [data-key="2"] { --cc-icon: url("app/static/tab_icons/about.svg"); }
+
+/* Explore's views, one size down: a lighter bar, smaller icons beside the labels. */
+[data-testid="stTabPanel"] [data-testid="stTabs"] > div > [role="tablist"] {
+  padding: 0.2rem;
+  border-radius: 0.75rem;
+  background-color: color-mix(in srgb, var(--cc-mint) 55%, var(--cc-page));
+}
+
+[data-testid="stTabPanel"] [role="tablist"] > [role="tab"] {
+  flex-direction: row;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.4rem 0.95rem;
+  border-radius: 0.55rem;
+  font-size: var(--fs-sm);
+}
+
+[data-testid="stTabPanel"] [role="tablist"] > [role="tab"]::before {
+  width: 18px;
+  height: 18px;
+}
+
+[data-testid="stTabPanel"] [role="tablist"] > [role="tab"] .react-aria-SelectionIndicator {
+  border-radius: 0.55rem;
+}
+
+[data-testid="stTabPanel"] [role="tablist"] > [data-key="0"] { --cc-icon: url("app/static/tab_icons/citywide.svg"); }
+[data-testid="stTabPanel"] [role="tablist"] > [data-key="1"] { --cc-icon: url("app/static/tab_icons/stations.svg"); }
+[data-testid="stTabPanel"] [role="tablist"] > [data-key="2"] { --cc-icon: url("app/static/tab_icons/events.svg"); }
+[data-testid="stTabPanel"] [role="tablist"] > [data-key="3"] { --cc-icon: url("app/static/tab_icons/weather.svg"); }
+
+/* An icon in front of each Explore picker option: call types on Citywide, shares on
+   Stations. Same drawings and stroke as the tab icons; colour follows the option's text. */
+:is(.st-key-city_call_type, .st-key-station_share_type) [data-variant="segmented_control"] > div {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+:is(.st-key-city_call_type, .st-key-station_share_type) [data-variant="segmented_control"] > div::before {
+  content: "";
+  flex: none;
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+  -webkit-mask: var(--cc-icon) center / contain no-repeat;
+  mask: var(--cc-icon) center / contain no-repeat;
+}
+
+.st-key-city_call_type button:nth-child(1) { --cc-icon: url("app/static/tab_icons/calls_all.svg"); }
+.st-key-city_call_type button:nth-child(2) { --cc-icon: url("app/static/tab_icons/calls_medical.svg"); }
+.st-key-city_call_type button:nth-child(3) { --cc-icon: url("app/static/tab_icons/calls_fire.svg"); }
+.st-key-city_call_type button:nth-child(4) { --cc-icon: url("app/static/tab_icons/calls_nonemergency.svg"); }
+.st-key-city_call_type button:nth-child(5) { --cc-icon: url("app/static/tab_icons/calls_other.svg"); }
+.st-key-station_share_type button:nth-child(1) { --cc-icon: url("app/static/tab_icons/share_fire.svg"); }
+.st-key-station_share_type button:nth-child(2) { --cc-icon: url("app/static/tab_icons/share_medical.svg"); }
+.st-key-station_share_type button:nth-child(3) { --cc-icon: url("app/static/tab_icons/share_other.svg"); }
+
+/* Phones: both bars run full width; labels shrink, icons stay, and Explore's views put the
+   icon back above the label so four fit across 390 px. */
+@media (max-width: 520px) {
+  [data-testid="stTabs"] > div > [role="tablist"] {
+    width: 100%;
+  }
+
+  [role="tablist"] > [role="tab"] {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0.45rem 0.3rem 0.4rem;
+    font-size: var(--fs-sm);
+  }
+
+  [data-testid="stTabPanel"] [role="tablist"] > [role="tab"] {
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.4rem 0.2rem 0.35rem;
+    font-size: var(--fs-xs);
+  }
+}
+
+/* Date picker */
 [data-testid="stDateInputField"] {
-  border-radius: 0.25rem;
-  transition: box-shadow 0.15s ease;
+  border-radius: 8px;
+  transition: border-color 0.15s ease;
 }
-[data-testid="stSelectbox"] > div[data-rac]:hover,
+
 [data-testid="stDateInputField"]:hover {
-  box-shadow: 0 0 0 2px #E06A6D;
+  border-color: var(--cc-accent) !important;
 }
 
-/* Dropdown options */
 [role="option"]:hover {
-  background-color: #F6E3E3 !important;
+  background-color: var(--cc-accent-tint) !important;
 }
 
-/* Radio options in the sidebar */
-label:has(input[type="radio"]) {
-  transition: color 0.15s ease;
-}
-label:has(input[type="radio"]):hover {
-  color: #FFFFFF !important;
-}
-label:has(input[type="radio"]):hover p {
-  text-decoration: underline;
-  text-underline-offset: 3px;
+[data-testid="stExpander"] {
+  background-color: var(--cc-surface);
+  border: 1px solid var(--cc-sage) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 1px 2px var(--cc-shadow), 0 4px 12px var(--cc-shadow);
+  overflow: hidden;
 }
 
-/* Hourly breakdown box */
 [data-testid="stExpander"] summary {
+  background-color: var(--cc-surface);
   transition: background-color 0.15s ease;
-}
-[data-testid="stExpander"] summary:hover {
-  background-color: #EFEBE5;
-  color: #A4282B;
+  font-weight: 600;
 }
 
-/* Links */
+[data-testid="stExpander"] summary:hover {
+  background-color: var(--cc-mint);
+  color: var(--cc-accent);
+}
+
 a {
   transition: color 0.15s ease;
 }
+
 a:hover {
-  color: #A4282B !important;
+  color: var(--cc-accent) !important;
 }
 
-/* Sidebar collapse arrow */
-[data-testid="stSidebarCollapseButton"] button:hover,
-[data-testid="stExpandSidebarButton"]:hover {
-  background-color: rgba(255, 255, 255, 0.12) !important;
-}
-[data-testid="stSidebarCollapseButton"] button:hover span {
-  color: #FFFFFF !important;
+/* Pop-up windows sit on a very light blue panel, so they stand off the mint page behind. */
+[data-testid="stDialog"] [role="dialog"] {
+  background-color: var(--cc-panel) !important;
 }
 
-/* Keep it calm for people who turn off motion */
+/* Reduced motion: no lifts, presses or slides; colours still change at once. */
 @media (prefers-reduced-motion: reduce) {
   [data-testid^="stBaseButton"],
-  [data-testid^="stBaseButton"]:hover,
+  [data-variant="segmented_control"],
+  [data-testid="stDialog"] button[aria-label="Close"],
   [role="tab"],
-  [data-testid="stSelectbox"] > div[data-rac],
+  [role="tab"]::before,
+  [role="tab"] .react-aria-SelectionIndicator,
   [data-testid="stDateInputField"],
-  [data-testid="stExpander"] summary {
+  [data-testid="stExpander"] summary,
+  .cc-chip,
+  .cc-more summary {
     transition: none !important;
     transform: none !important;
   }
+}
+
+/* Keyed containers and elevated card surfaces */
+.st-key-prediction_briefing {
+  margin-bottom: 0.45rem;
+}
+
+/* Weather alert lines under the briefing sit close together, as one group. */
+.st-key-prediction_weather {
+  gap: 0.35rem;
+}
+
+.st-key-card_citywide,
+.st-key-card_busiest,
+.st-key-card_watch,
+.st-key-card_mix,
+[class*="st-key-card_compare_"] {
+  background-color: var(--cc-surface) !important;
+  border: 1px solid var(--cc-sage) !important;
+  border-radius: 10px !important;
+  padding: 1rem 1.1rem !important;
+  box-shadow: 0 1px 2px var(--cc-shadow), 0 4px 12px var(--cc-shadow) !important;
+}
+
+/* Every Explore chart sits in a card with its title and notes: the light panel, a soft edge
+   and a low shadow, so it does not look flat on the page. */
+[class*="st-key-explore_card"] {
+  background-color: var(--cc-panel) !important;
+  border: 1px solid var(--cc-sage) !important;
+  border-radius: 10px !important;
+  padding: 1rem 1.1rem !important;
+  box-shadow: 0 1px 2px var(--cc-shadow), 0 4px 12px var(--cc-shadow) !important;
+}
+
+/* Equal-height and equal-width card rows at laptop/desktop widths */
+@media (min-width: 768px) {
+  [data-testid="stHorizontalBlock"]:has(.st-key-card_citywide),
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-explore_card"]),
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-card_compare_"]) {
+    align-items: stretch !important;
+  }
+
+  [data-testid="stHorizontalBlock"]:has(.st-key-card_citywide) > [data-testid="stColumn"],
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-explore_card"]) > [data-testid="stColumn"],
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-card_compare_"]) > [data-testid="stColumn"] {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  [data-testid="stHorizontalBlock"]:has(.st-key-card_citywide) > [data-testid="stColumn"] > [data-testid="stVerticalBlock"],
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-card_compare_"]) > [data-testid="stColumn"] > [data-testid="stVerticalBlock"],
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-explore_card"]) > [data-testid="stColumn"] > [data-testid="stVerticalBlock"],
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-explore_card"]) [data-testid="stLayoutWrapper"]:has(> [class*="st-key-explore_card"]),
+  [data-testid="stHorizontalBlock"]:has(.st-key-card_citywide) [data-testid="stLayoutWrapper"]:has(> .st-key-card_citywide),
+  [data-testid="stHorizontalBlock"]:has(.st-key-card_citywide) [data-testid="stLayoutWrapper"]:has(> .st-key-card_busiest),
+  [data-testid="stHorizontalBlock"]:has(.st-key-card_citywide) [data-testid="stLayoutWrapper"]:has(> .st-key-card_watch),
+  [data-testid="stHorizontalBlock"]:has([class*="st-key-card_compare_"]) [data-testid="stLayoutWrapper"]:has(> [class*="st-key-card_compare_"]) {
+    flex: 1 1 auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+  }
+
+  .st-key-card_citywide,
+  .st-key-card_busiest,
+  .st-key-card_watch,
+  [class*="st-key-card_compare_"] {
+    flex: 1 1 auto !important;
+    height: 100% !important;
+  }
+
+  /* Keep KPI digits horizontally aligned whether the card label wraps to 1 or 2 lines */
+  .st-key-card_citywide [data-testid="stMetricLabel"],
+  .st-key-card_busiest [data-testid="stMetricLabel"] {
+    min-height: 2.6rem;
+    align-items: flex-start;
+  }
+}
+
+/* Space between the map and cards above and the full-width details below. */
+.st-key-prediction_bottom_info {
+  margin-top: 1.25rem;
+}
+
+/* Picked-station tags in the compare list use their pick colour, the same as their rims and cards. */
+.st-key-compare_stations [data-tag-index="0"] {
+  background-color: var(--cc-pick-0) !important;
+  color: var(--cc-pick-text-0) !important;
+}
+
+.st-key-compare_stations [data-tag-index="1"] {
+  background-color: var(--cc-pick-1) !important;
+  color: var(--cc-pick-text-1) !important;
+}
+
+.st-key-compare_stations [data-tag-index="2"] {
+  background-color: var(--cc-pick-2) !important;
+  color: var(--cc-pick-text-2) !important;
+}
+
+/* Each tag starts with its pick number, 1 to 3, the same as its card and table row. */
+.st-key-compare_stations [data-tag-index]::before {
+  margin-right: 0.35em;
+  font-weight: 700;
+}
+
+.st-key-compare_stations [data-tag-index="0"]::before { content: "1"; }
+.st-key-compare_stations [data-tag-index="1"]::before { content: "2"; }
+.st-key-compare_stations [data-tag-index="2"]::before { content: "3"; }
+
+/* Let long metric titles like "Biggest rise vs usual: SFD 39" wrap instead of cutting off. */
+[data-testid="stMetricLabel"] p {
+  white-space: normal !important;
+  line-height: 1.25;
+  color: var(--cc-muted) !important;
+  font-weight: 600 !important;
+}
+
+[data-testid="stMetricValue"] {
+  font-variant-numeric: tabular-nums;
+}
+
+.st-key-prediction_map_box {
+  background-color: var(--cc-map);
+  border: 1px solid var(--cc-sage);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px var(--cc-shadow), 0 4px 12px var(--cc-shadow);
+  overflow: hidden;
+}
+
+/* The Prediction map never moves, so its zoom buttons are hidden. */
+.st-key-prediction_map_box .maplibregl-ctrl-group,
+.st-key-prediction_map_box .mapboxgl-ctrl-group {
+  display: none !important;
+}
+
+/* Side by side, the map grows from its set height (the whole city) to fill the left column,
+   so the column ends level with the right one; the fixed zoom keeps the city in the middle. */
+@media (min-width: 1160px) {
+  [data-testid="stLayoutWrapper"]:has(> .st-key-prediction_map_panel),
+  .st-key-prediction_map_panel [data-testid="stLayoutWrapper"]:has(> .st-key-prediction_map_box),
+  .st-key-prediction_map_box > [data-testid="stElementContainer"],
+  .st-key-prediction_map_box [data-testid="stFullScreenFrame"],
+  .st-key-prediction_map_box [data-testid="stDeckGlJsonChart"],
+  .st-key-prediction_map_box [data-testid="stDeckGlJsonChart"] > div {
+    display: flex;
+    flex-direction: column;
+    flex: 1 0 auto !important;
+  }
+}
+
+/* Hand pointer while the hover card is open, so a clickable station area reads as clickable
+   (the Prediction map and both Explore maps; the Events venue map cannot be clicked).
+   Streamlit drops pydeck's own cursor setting, and the card only shows over an area.
+   The pointer sits on deck.gl's event layer above the canvas. */
+:is(.st-key-prediction_map_box, .st-key-city_value_map,
+  .st-key-station_area_map):has(.deck-tooltip[style*="display: block"])
+  :is(canvas, .deck-events-root, .deck-events-root *) {
+  cursor: pointer !important;
+}
+
+/* Below 1160 px the map's column is narrower than the 360 px the zoom is fitted to, so the
+   Prediction top stacks: sentence and cards first, then the map at full width. */
+@media (max-width: 1159px) {
+  .st-key-prediction_split {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .st-key-prediction_split [data-testid="stLayoutWrapper"]:has(> [data-testid="stHorizontalBlock"] .st-key-prediction_map_panel),
+  .st-key-prediction_split [data-testid="stHorizontalBlock"]:has(.st-key-prediction_map_panel),
+  .st-key-prediction_split [data-testid="stColumn"]:has(.st-key-prediction_map_panel),
+  .st-key-prediction_split [data-testid="stColumn"]:has(.st-key-prediction_top_info),
+  .st-key-prediction_split [data-testid="stVerticalBlock"]:has(> [data-testid="stLayoutWrapper"] > .st-key-prediction_map_panel),
+  .st-key-prediction_split [data-testid="stVerticalBlock"]:has(> [data-testid="stLayoutWrapper"] > .st-key-prediction_top_info),
+  .st-key-prediction_split [data-testid="stLayoutWrapper"]:has(> .st-key-prediction_map_panel),
+  .st-key-prediction_split [data-testid="stLayoutWrapper"]:has(> .st-key-prediction_top_info) {
+    display: contents !important;
+  }
+
+  .st-key-prediction_top_info {
+    order: 1;
+  }
+
+  .st-key-prediction_map_panel {
+    order: 2;
+    margin-top: 0.5rem;
+  }
+}
+
+/* On narrow phone screens: tighter page edges; the full-width details follow. */
+@media (max-width: 767px) {
+  [data-testid="stMainBlockContainer"] {
+    padding-top: 1rem;
+    padding-left: 0.85rem;
+    padding-right: 0.85rem;
+  }
+
+  .st-key-prediction_bottom_info {
+    margin-top: 0.5rem;
+  }
+
+  .st-key-card_citywide,
+  .st-key-card_busiest,
+  .st-key-card_watch,
+  [class*="st-key-card_compare_"] {
+    width: 100% !important;
+    min-height: 235px;
+    box-sizing: border-box !important;
+  }
+}
+
+/* Explanation text from text_blocks.py: labelled definitions, quiet notes, link chips,
+   how-to hints with small drawings of the real controls, and "How to read" toggles. */
+.cc-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 78rem;
+  font-size: var(--fs-md);
+  line-height: 1.55;
+  color: var(--cc-muted);
+}
+
+.cc-text p,
+.cc-text dl {
+  margin: 0;
+}
+
+.cc-card {
+  background-color: var(--cc-surface);
+  border: 1px solid var(--cc-sage);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+  gap: 0.65rem;
+}
+
+.cc-title {
+  font-weight: 700;
+  font-size: var(--fs-lg);
+  color: var(--cc-ink);
+}
+
+.cc-lead {
+  max-width: 68ch;
+}
+
+.cc-card .cc-lead {
+  color: var(--cc-ink);
+}
+
+/* !important: Streamlit indents every list by 32 px. */
+.cc-terms {
+  display: grid;
+  margin: 0 !important;
+  padding: 0 !important;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.3rem 1rem;
+}
+
+.cc-terms dt {
+  margin: 0;
+  font-weight: 600;
+  color: var(--cc-ink);
+}
+
+.cc-terms dd {
+  margin: 0;
+  max-width: 68ch;
+}
+
+.cc-note {
+  display: flex;
+  gap: 0.45rem;
+  align-items: baseline;
+  font-size: var(--fs-base);
+}
+
+/* The small "i" mark in front of a note. */
+.cc-note::before {
+  content: "i";
+  flex: none;
+  width: 1.25em;
+  height: 1.25em;
+  border: 1.3px solid currentColor;
+  border-radius: 50%;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  line-height: calc(1.25em - 2.6px);
+  text-align: center;
+  transform: translateY(0.1rem);
+}
+
+.cc-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+}
+
+.cc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  font-size: var(--fs-base);
+}
+
+.cc-chip-row {
+  white-space: nowrap;
+}
+
+.cc-chip {
+  display: inline-block;
+  margin-left: 0.25rem;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid var(--cc-sage);
+  border-radius: 6px;
+  background-color: var(--cc-surface);
+  color: var(--cc-ink) !important;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.cc-chip::after {
+  content: " \2197";
+  font-size: 0.9em;
+}
+
+.cc-chip:hover {
+  background-color: var(--cc-mint);
+  border-color: var(--cc-accent);
+}
+
+.cc-chip:focus-visible,
+.cc-more summary:focus-visible {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: 2px;
+}
+
+.cc-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.5rem;
+  font-size: var(--fs-base);
+}
+
+.cc-hint {
+  flex: 1 1 15rem;
+}
+
+.cc-card .cc-hints {
+  border-top: 1px solid var(--cc-track);
+  padding-top: 0.6rem;
+}
+
+.cc-glyph {
+  display: inline-block;
+  position: relative;
+  margin-right: 0.35em;
+  vertical-align: -0.05em;
+}
+
+/* The table's tick box. */
+.cc-tick {
+  width: 0.8em;
+  height: 0.8em;
+  border: 1.4px solid var(--cc-muted);
+  border-radius: 3px;
+  background-color: var(--cc-surface);
+}
+
+/* Three day bars, like the Last 4 weeks column. */
+.cc-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 0.85em;
+}
+
+.cc-bars i {
+  width: 3px;
+  height: 55%;
+  background-color: var(--cc-salmon);
+}
+
+.cc-bars i:nth-child(2) {
+  height: 100%;
+  background-color: var(--cc-accent);
+}
+
+.cc-bars i:nth-child(3) {
+  height: 75%;
+}
+
+/* The Expected column's track bar. */
+.cc-track {
+  width: 1.3em;
+  height: 0.32em;
+  border-radius: 2px;
+  background-color: var(--cc-track);
+  vertical-align: 0.12em;
+  overflow: hidden;
+}
+
+.cc-track i {
+  position: absolute;
+  inset: 0 35% 0 0;
+  background-color: var(--cc-muted);
+}
+
+/* An arrow onto a line, for the download button. */
+.cc-download {
+  width: 0.8em;
+  border-bottom: 1.5px solid var(--cc-accent);
+  color: var(--cc-accent);
+  font-size: 0.9em;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+}
+
+.cc-download::before {
+  content: "\2193";
+}
+
+/* A mouse pointer. */
+.cc-point {
+  width: 0.62em;
+  height: 0.9em;
+  background-color: var(--cc-ink);
+  clip-path: polygon(0 0, 0 82%, 27% 63%, 46% 100%, 62% 92%, 44% 57%, 85% 57%);
+}
+
+/* A station area outlined in the first pick colour. */
+.cc-area {
+  width: 0.95em;
+  height: 0.85em;
+  background-color: var(--cc-pick-0);
+  clip-path: polygon(50% 0, 100% 35%, 85% 100%, 15% 100%, 0 35%);
+}
+
+.cc-area i {
+  position: absolute;
+  inset: 1.6px;
+  background-color: var(--cc-mint);
+  clip-path: polygon(50% 0, 100% 35%, 85% 100%, 15% 100%, 0 35%);
+}
+
+/* A dashed reference line. */
+.cc-dash {
+  width: 1.2em;
+  border-top: 2px dashed var(--cc-muted);
+  vertical-align: 0.3em;
+}
+
+/* A shaded stretch of days, light blue like the weather chart's event shading. */
+.cc-shade {
+  width: 0.9em;
+  height: 0.8em;
+  border-radius: 2px;
+  background-color: var(--cc-header);
+  opacity: 0.6;
+}
+
+.cc-key {
+  padding: 0 0.4rem;
+  border: 1px solid var(--cc-sage);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background-color: var(--cc-surface);
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--cc-ink);
+}
+
+.cc-more summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  list-style: none;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--cc-muted);
+}
+
+.cc-more summary::-webkit-details-marker {
+  display: none;
+}
+
+/* A small chevron that turns down when the help is open. */
+.cc-more summary::before {
+  content: "";
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.cc-more[open] summary::before {
+  transform: rotate(45deg);
+}
+
+.cc-more summary:hover {
+  color: var(--cc-accent);
+}
+
+.cc-more p {
+  margin-top: 0.3rem;
+  max-width: 68ch;
+  font-size: var(--fs-base);
+}
+
+.cc-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 0.9rem;
+}
+
+@media (max-width: 520px) {
+  .cc-terms {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0;
+  }
+
+  .cc-terms dd {
+    margin-bottom: 0.35rem;
+  }
+
+  .cc-chip-row {
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-chip,
+  .cc-more summary::before {
+    transition: none !important;
+  }
+}
+
+/* A note tucked right under the message box it explains, such as the weather alert note. */
+.cc-under {
+  margin-top: -0.45rem !important;
+  padding-left: 0.2rem;
+}
+
+/* Small labelled facts, such as the date the data runs through. */
+.cc-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+  font-size: var(--fs-base);
+}
+
+.cc-fact b {
+  font-weight: 600;
+  color: var(--cc-ink);
+}
+
+.cc-fact-label {
+  display: inline-block;
+  margin-right: 0.3rem;
+  padding: 0.05rem 0.6rem;
+  border: 1px solid var(--cc-sage);
+  border-radius: 999px;
+  background-color: var(--cc-surface);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--cc-muted);
 }

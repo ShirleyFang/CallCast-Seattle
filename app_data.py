@@ -2,7 +2,9 @@
 
 import importlib.util
 import json
+import os
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -12,20 +14,19 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent
 # These count table columns describe the four call categories shown in history charts.
 GROUPS = ["fire", "medical", "non_emergency", "other"]
+# Each station's share of calls by shift hour, for the hourly breakdown.
+HOURLY_PROFILE = "data/hourly_profile.csv"
+GAP_MESSAGE = "No estimate for this date: the call data for this shift has a gap."
 
 
 def load_tables(root=ROOT):
-    """Read station locations, past call totals, and model input rows from three CSVs."""
-    # sfd_stations.csv: names and coordinates for the station menu and map.
+    """Read station locations, past call totals, and model input rows (past and forecast) from four CSVs."""
+    # sfd_stations.csv: names and coordinates for the compare list and maps.
     stations = pd.read_csv(root / "data/sfd_stations.csv")
     # station_shift_counts.csv: past totals, categories, and suspected outage flags.
-    counts = pd.read_csv(
-        root / "data/station_shift_counts.csv", parse_dates=["ShiftDate"]
-    )
+    counts = pd.read_csv(root / "data/station_shift_counts.csv")
     # modeling_dataset.csv: calendar and earlier call inputs, plus the calls label.
-    features = pd.read_csv(
-        root / "data/modeling_dataset.csv", parse_dates=["ShiftDate"]
-    )
+    features = pd.read_csv(root / "data/modeling_dataset.csv")
     # Check that each table has rows and the columns the app needs.
     required = [
         (stations, {"station", "lat", "lon"}, "stations"),
@@ -64,7 +65,7 @@ def load_tables(root=ROOT):
             )
     # Read ShiftDate as a date in both tables so they can be matched correctly.
     for table in [counts, features]:
-        dates = pd.to_datetime(table["ShiftDate"], errors="raise")
+        dates = pd.to_datetime(table["ShiftDate"], format="%Y-%m-%d", errors="raise")
         if (
             dates.isna().any()
             or dates.dt.tz is not None
@@ -129,20 +130,89 @@ def load_tables(root=ROOT):
         raise ValueError(
             "Modeling rows/targets do not match the count table rows without an outage."
         )
+    # The shifts after the last count date have model inputs but no calls yet.
+    forecast = read_forecast_features(
+        root, set(stations["station"]), counts["ShiftDate"].max(), features.columns
+    )
+    if forecast is not None:
+        features = pd.concat([features, forecast], ignore_index=True)
     return stations, counts.sort_values(["Station", "ShiftDate"]), features
 
 
-def target_dates(counts):
-    """Use the loaded count table to choose the date picker's range and starting date."""
+def read_forecast_features(root, station_ids, last_count, columns):
+    """Read forecast_features.csv, check it, and return its rows (None if the file is absent)."""
+    path = root / "data/forecast_features.csv"
+    if not path.exists():
+        return None
+    forecast = pd.read_csv(path, parse_dates=["ShiftDate"])
+    if forecast.empty or set(columns) - set(forecast.columns):
+        raise ValueError("forecast_features.csv is empty or missing columns.")
+    # These shifts have not happened, so they cannot have a call count.
+    if forecast["calls"].notna().any():
+        raise ValueError(
+            "forecast_features.csv must have blank calls: those shifts have not happened yet."
+        )
+    if forecast["Station"].isna().any() or set(forecast["Station"]) != station_ids:
+        raise ValueError(
+            "forecast_features.csv stations do not match the station list."
+        )
+    per_date = forecast.groupby("ShiftDate")["Station"].nunique()
+    if (
+        forecast.duplicated(["Station", "ShiftDate"]).any()
+        or (per_date != len(station_ids)).any()
+    ):
+        raise ValueError(
+            "forecast_features.csv needs exactly one row for every station on each forecast date."
+        )
+    # The first forecast date is the day after the last counts, with no gap after it.
+    expected = pd.date_range(last_count + pd.Timedelta(days=1), periods=len(per_date))
+    if not per_date.index.equals(expected):
+        raise ValueError(
+            "Forecast dates must follow the last day of counts, one day after another."
+        )
+    return forecast[list(columns)]
+
+
+def first_model_date(root=ROOT):
+    # First target date the trained model can serve, or None if its dates can't be read.
+    # Same rule as learned_predictions: a target must be at least 3 days after the
+    # model's last training shift, so earlier dates would only replay its training data.
+    try:
+        metadata = json.loads((root / "model_metadata.json").read_text("utf-8"))
+        trained = pd.Timestamp(date.fromisoformat(metadata["trained_through"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return (trained + pd.Timedelta(days=3)).date()
+
+
+def seattle_today():
+    # Current Seattle date, or CALLCAST_TODAY (YYYY-MM-DD) when fixed for tests.
+    fixed = os.environ.get("CALLCAST_TODAY")
+    if fixed:
+        return date.fromisoformat(fixed)
+    return pd.Timestamp.now(tz="America/Los_Angeles").date()
+
+
+def target_dates(counts, earliest=None, latest=None, today=None):
+    """Use the loaded count table to choose the date picker's range and starting date.
+
+    earliest is the first date the model can serve; the picker starts there if it is later.
+    latest is the last forecast date; the picker ends there if it is later than the counts.
+    """
     # Leave an initial month of history before the first selectable target shift.
     first = counts["ShiftDate"].min().normalize() + pd.Timedelta(days=31)
+    if earliest is not None:
+        first = max(first, pd.Timestamp(earliest).normalize())
     last = counts["ShiftDate"].max().normalize()
+    if latest is not None:
+        last = max(last, pd.Timestamp(latest).normalize())
     if first > last:
         raise ValueError(
             "At least 32 calendar shifts are needed for this historical demo."
         )
-    # Prefer the example date, but keep it inside whichever snapshot is installed.
-    default = min(max(pd.Timestamp("2026-10-24"), first), last)
+    # Open on today (Seattle time), clamped inside whichever snapshot is installed.
+    day = seattle_today() if today is None else pd.Timestamp(today).date()
+    default = min(max(pd.Timestamp(day).normalize(), first), last)
     return first.date(), last.date(), default.date()
 
 
@@ -213,6 +283,21 @@ def validate_predictions(result, station_ids):
     return result
 
 
+def _load_predict_module(path):
+    """Load predict.py once; it keeps the model in memory, so a fresh copy per click would reload it."""
+    info = path.stat()
+    return _predict_module(path, info.st_mtime_ns, info.st_size)
+
+
+@lru_cache(maxsize=4)
+def _predict_module(path, mtime_ns, size):
+    # mtime_ns and size are only cache keys: editing predict.py loads a fresh copy.
+    spec = importlib.util.spec_from_file_location("callcast_predict", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def learned_predictions(features, target, station_ids, root=ROOT):
     """Send loaded modeling_dataset.csv inputs to predict.py and check the returned counts."""
     # predict.py runs the saved model; the JSON describes its inputs and training cutoff.
@@ -269,6 +354,16 @@ def learned_predictions(features, target, station_ids, root=ROOT):
         raise ValueError("Model input column names must be unique.")
     # Select one modeling_dataset.csv input row per station for the requested target date.
     rows = features.loc[features["ShiftDate"] == target].copy()
+    last_forecast = features["ShiftDate"].max()
+    if rows.empty and target > last_forecast:
+        # forecast_features.csv covers a fixed number of shifts after the last counts.
+        raise ValueError(
+            "No estimate for this date yet: estimates go up to "
+            f"{last_forecast:%b %d, %Y}."
+        )
+    if rows.empty:
+        # Shifts with a gap in the call data were dropped from modeling_dataset.csv.
+        raise ValueError(GAP_MESSAGE)
     if rows["Station"].duplicated().any() or set(rows["Station"]) != set(station_ids):
         raise ValueError(
             "modeling_dataset.csv needs one row per station for this shift."
@@ -278,12 +373,11 @@ def learned_predictions(features, target, station_ids, root=ROOT):
         raise ValueError(
             "Some model inputs are blank for this shift, and the model isn't set up for blanks."
         )
-    spec = importlib.util.spec_from_file_location("callcast_predict", paths[0])
-    module = importlib.util.module_from_spec(spec)
     # predict.py is the model team's code and can fail in any way, so show its error on screen.
     try:
-        spec.loader.exec_module(module)
-        output = module.predict_shift(rows[columns].copy())
+        module = _load_predict_module(paths[0])
+        # predict.py builds the special-day flags from ShiftDate, so it comes along with the inputs.
+        output = module.predict_shift(rows[[*columns, "ShiftDate"]].copy())
     except (
         ImportError,
         AttributeError,
@@ -298,9 +392,12 @@ def learned_predictions(features, target, station_ids, root=ROOT):
     return validate_predictions(output, station_ids), str(metadata["model_name"])
 
 
-def hourly_allocation(root, target, station, total):
-    """Use hourly_profile.csv to divide one station's shift estimate into hourly amounts."""
-    path = root / "data/hourly_profile.csv"
+def hourly_allocation(root, target, station, total, profile=None):
+    """Use hourly_profile.csv to divide one station's shift estimate into hourly amounts.
+
+    profile is the already read hourly_profile.csv, if the caller has it.
+    """
+    path = root / HOURLY_PROFILE
     if not path.exists():
         raise ValueError(
             "Hourly breakdown not available yet (needs data/hourly_profile.csv)."
@@ -315,10 +412,11 @@ def hourly_allocation(root, target, station, total):
     hours = (end - start).total_seconds() / 3600
     if hours != 24:
         raise ValueError(
-            f"Hourly breakdown not available for this {hours:.0f} hour daylight saving shift."
+            f"No hourly breakdown for this shift: the clocks change, so it is {hours:.0f} hours long."
         )
     # Each row gives one station, one shift hour, its share of calls, and its history cutoff.
-    profile = pd.read_csv(path)
+    if profile is None:
+        profile = pd.read_csv(path)
     expected = {"Station", "shift_hour", "share", "history_through"}
     if not expected <= set(profile):
         raise ValueError(
@@ -353,3 +451,76 @@ def hourly_allocation(root, target, station, total):
     part["expected_calls"] = shares * total
     part["hour"] = part["shift_hour"].map(lambda h: f"{(int(h) + 8) % 24:02d}:00")
     return part.sort_values("shift_hour")
+
+
+def citywide_hourly(root, target, estimates):
+    # Read hourly_profile.csv once and add every station's hourly amounts for the citywide split.
+    if len(estimates) == 0:
+        raise ValueError("No station estimates to split by hour.")
+    path = root / HOURLY_PROFILE
+    profile = pd.read_csv(path) if path.exists() else None
+    parts = [hourly_allocation(root, target, s, v, profile) for s, v in estimates.items()]
+    total = sum(p["expected_calls"].to_numpy() for p in parts)
+    # The share becomes the city's, not the first station's (the chart's tooltip shows it).
+    return parts[0].assign(expected_calls=total, share=total / total.sum())
+
+
+def station_hour_peaks(root, target, estimates):
+    # Each station's busiest expected hour, read from hourly_profile.csv once: the busiest of
+    # them tops the shared hourly colour scale.
+    profile = pd.read_csv(root / HOURLY_PROFILE)
+    return [
+        hourly_allocation(root, target, s, v, profile)["expected_calls"].max()
+        for s, v in estimates.items()
+    ]
+
+
+def load_ranges(root=ROOT):
+    """Read prediction_ranges.csv: how far real calls usually land from an estimate."""
+    ranges = pd.read_csv(root / "data/prediction_ranges.csv")
+    if {"level", "predicted_from", "predicted_to", "low", "high"} - set(ranges.columns):
+        raise ValueError("prediction_ranges.csv is missing columns.")
+    bands = ranges[ranges["level"] == "station"].sort_values("predicted_from")
+    city = ranges[ranges["level"] == "citywide"]
+    if set(ranges["level"]) - {"station", "citywide"} or len(city) != 1 or bands.empty:
+        raise ValueError(
+            "prediction_ranges.csv needs one citywide row and station bands."
+        )
+    # Every estimate must land in exactly one band, so the bands start at 0 with no gap.
+    starts, ends = bands["predicted_from"].to_numpy(), bands["predicted_to"].to_numpy()
+    if starts[0] != 0 or (starts[1:] != ends[:-1]).any():
+        raise ValueError(
+            "Station bands must start at 0 and follow each other with no gap."
+        )
+    if (
+        ranges[["low", "high"]].isna().any().any()
+        or (ranges["low"] > 0).any()
+        or (ranges["high"] < 0).any()
+    ):
+        raise ValueError(
+            "Every range needs a low of 0 or less and a high of 0 or more."
+        )
+    return bands.reset_index(drop=True), city.iloc[0]
+
+
+def add_likely_range(view, bands):
+    """Add whole-number low and high columns: each estimate plus the usual misses for its size."""
+    band = np.searchsorted(
+        bands["predicted_to"].to_numpy(), view["predicted_calls"], side="left"
+    )
+    band = band.clip(max=len(bands) - 1)
+    view = view.copy()
+    view["low"] = (
+        (view["predicted_calls"] + bands["low"].to_numpy()[band])
+        .clip(lower=0)
+        .round()
+        .astype(int)
+    )
+    view["high"] = (
+        (view["predicted_calls"] + bands["high"].to_numpy()[band]).round().astype(int)
+    )
+    return view
+
+
+def citywide_range(total, city):
+    return round(max(total + city["low"], 0)), round(total + city["high"])

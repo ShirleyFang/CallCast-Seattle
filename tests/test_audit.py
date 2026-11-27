@@ -71,7 +71,8 @@ class CsvLoadingTests(DataTestCase):
         self.assertEqual(self.counts.ShiftDate.nunique(), 1762)
         self.assertEqual(len(self.counts), 59908)
         self.assertEqual(len(self.usable), 59092)
-        self.assertEqual(len(self.features), 59092)
+        # 59,092 shifts with counts, plus 3,060 rows (34 stations x 90 days) of forecast inputs.
+        self.assertEqual(len(self.features), 59092 + 3060)
         self.assertEqual(self.counts.calls.sum(), 541319)
 
     def test_broken_csvs_are_rejected(self):
@@ -79,14 +80,19 @@ class CsvLoadingTests(DataTestCase):
         files = {
             "sfd_stations.csv": self.stations,
             "station_shift_counts.csv": self.counts,
-            "modeling_dataset.csv": self.features,
+            "modeling_dataset.csv": self.features[self.features.calls.notna()],
+            "forecast_features.csv": self.features[self.features.calls.isna()],
         }
+        files = {name: frame.reset_index(drop=True) for name, frame in files.items()}
         cases = [
             ("sfd_stations.csv", "lat", np.inf, "coordinates"),
             ("sfd_stations.csv", "lat", 999, "coordinates"),  # off the planet
             ("station_shift_counts.csv", "calls", -1, "whole numbers"),
             ("station_shift_counts.csv", "ShiftDate", "not a date", ""),
             ("modeling_dataset.csv", "calls", 999, "do not match"),
+            ("forecast_features.csv", "calls", 5, "blank calls"),  # not happened yet
+            ("forecast_features.csv", "Station", "SFD 99", "do not match"),
+            ("forecast_features.csv", "ShiftDate", "2027-01-01", "every station"),
         ]
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -109,14 +115,16 @@ class CsvLoadingTests(DataTestCase):
 
 class FeatureTests(DataTestCase):
     def test_lag_and_average_features(self):
-        # Build each feature again from the count table and compare every row.
+        # Build each feature again from the count table and compare every row that has
+        # real recent calls: all past shifts and the first 3 forecast shifts.
         # Outage shifts count as missing, and an average needs a minimum number of values.
         calls = (
             self.counts.assign(value=self.counts.calls.where(~self.counts.Masked))
             .set_index(["Station", "ShiftDate"])
             .value
         )
-        f = self.features
+        real_until = self.counts.ShiftDate.max() + pd.Timedelta(days=3)
+        f = self.features[self.features.ShiftDate <= real_until].reset_index(drop=True)
         for column, lags, minimum in [
             ("lag3", [3], 1),
             ("lag7", [7], 1),
@@ -144,6 +152,27 @@ class FeatureTests(DataTestCase):
             np.testing.assert_allclose(
                 f[column], expected, equal_nan=True, err_msg=column
             )
+
+    def test_long_range_lags_come_from_the_lookup_table(self):
+        # From the 4th forecast shift on, no recent calls exist, so each lag feature is
+        # its own mean over known shifts with the same station, weekday and month.
+        lags = ["lag3", "lag7", "avg7", "avg28", "same_weekday_avg4"]
+        lookup = pd.read_csv(ROOT / "data/lag_fill_means.csv")
+        last_count = self.counts.ShiftDate.max()
+        # Built only from shifts known at planning time, one row per station x weekday x month.
+        self.assertTrue((lookup.history_through == last_count.date().isoformat()).all())
+        self.assertEqual(len(lookup), 34 * 7 * 12)
+        self.assertGreaterEqual(lookup.n_shifts.min(), 8)
+        known = self.features[self.features.ShiftDate <= last_count]
+        means = known.groupby(["Station", "weekday", "month"])[lags].mean()
+        mine = lookup.set_index(["Station", "weekday", "month"])[lags]
+        np.testing.assert_allclose(mine.sort_index(), means.sort_index(), equal_nan=True)
+        # Every long-range row uses its lookup cell, with no blanks.
+        far = self.features[self.features.ShiftDate > last_count + pd.Timedelta(days=3)]
+        self.assertEqual(far.ShiftDate.min().date(), date(2026, 11, 1))
+        self.assertFalse(far[lags].isna().any().any())
+        cells = mine.reindex(pd.MultiIndex.from_frame(far[["Station", "weekday", "month"]]))
+        np.testing.assert_allclose(far[lags].to_numpy(), cells.to_numpy())
 
     def test_calendar_and_holiday_flags(self):
         f = self.features
