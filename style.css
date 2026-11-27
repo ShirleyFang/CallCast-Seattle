@@ -205,20 +205,20 @@ summary,
    text (z-index -1 in the bar) that clicks pass through, so the title, the date box and its
    calendar always stay on top. Below 1280 px the text fills the bar, so there are no clouds. */
 :root {
-  --cc-cloud-a-drift: 24px;
-  --cc-cloud-a-time: 50s;
+  --cc-cloud-a-drift: 70px;
+  --cc-cloud-a-time: 24s;
   --cc-cloud-a-delay: -9s;
-  --cc-cloud-b-drift: -30px;
-  --cc-cloud-b-time: 38s;
+  --cc-cloud-b-drift: -90px;
+  --cc-cloud-b-time: 19s;
   --cc-cloud-b-delay: -17s;
-  --cc-cloud-c-drift: 22px;
-  --cc-cloud-c-time: 44s;
+  --cc-cloud-c-drift: 60px;
+  --cc-cloud-c-time: 22s;
   --cc-cloud-c-delay: -31s;
-  --cc-cloud-d-drift: -18px;
-  --cc-cloud-d-time: 56s;
+  --cc-cloud-d-drift: -55px;
+  --cc-cloud-d-time: 27s;
   --cc-cloud-d-delay: -4s;
-  --cc-cloud-e-drift: 20px;
-  --cc-cloud-e-time: 33s;
+  --cc-cloud-e-drift: 50px;
+  --cc-cloud-e-time: 17s;
   --cc-cloud-e-delay: -12s;
 }
 
