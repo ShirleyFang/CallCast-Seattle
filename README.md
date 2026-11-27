@@ -2,11 +2,60 @@
 
 Forecasts Seattle Fire Department 911 calls per station per 08:00–08:00 shift, 3 shifts ahead, to support staffing decisions.
 
-## Setup
+## Start the app with Docker (new users start here)
+
+You only need **Docker Desktop**. No Python setup.
+
+**1. Install Docker Desktop** from [docker.com](https://www.docker.com/products/docker-desktop/) (free for personal and school use). Open it and wait until it says **running**.
+
+**2. Get the code** (in a terminal):
 
 ```bash
-uv sync
+git clone https://github.com/ShirleyFang/CallCast-Seattle.git
+cd CallCast-Seattle
 ```
+
+**3. Build the app** (about 2 minutes the first time):
+
+```bash
+docker build -t callcast-seattle .
+```
+
+**4. Start the app:**
+
+```bash
+docker run --rm -p 8501:8501 callcast-seattle
+```
+
+**5. Open [http://localhost:8501](http://localhost:8501)** in your browser.
+
+**To stop it:** press **Ctrl+C** in the terminal.
+
+| Problem | Fix |
+|---|---|
+| `command not found: docker` (Mac) | In Docker Desktop, Settings > Advanced, turn on **System CLI tools**, then open a new terminal. More options in "Run with Docker" below. |
+| Port 8501 is busy | Run `docker run --rm -p 8502:8501 callcast-seattle` and open `http://localhost:8502`. |
+| No weather icons | Normal on a fresh clone: they are licensed files kept out of git. The app works without them. |
+
+## Setup and run
+
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/) (it installs Python 3.13 and the exact packages in `uv.lock`), or Docker (see "Run with Docker" below).
+
+Run locally, without Docker:
+
+```bash
+git clone https://github.com/ShirleyFang/CallCast-Seattle.git
+cd CallCast-Seattle
+uv sync --frozen
+uv run python -m unittest discover -s tests
+uv run streamlit run app.py
+```
+
+The tests take about a minute and a half. Then open `http://localhost:8501` in a browser. Stop the app with Ctrl+C in the terminal. If port 8501 is busy, add `--server.port 8502` and open `http://localhost:8502`.
+
+The weather icons, the alert icons, the NWS logo and the top bar's cloud and sun pictures in `static/weather_icons/` are licensed files kept out of git. A fresh clone runs without them: the weather line and the weather alerts show their words with no icon, and the top bar shows its sky with no pictures. To get the icons, ask the team for the folder and copy it into `static/weather_icons/` before running the app or building the Docker image. The tab icons (`static/tab_icons/`) and sounds (`static/sounds/`) are in git.
+
+The fonts (Figtree and Lexend) and the map's pale basemap load from the internet. Without a network the app still works, with the browser's own font and a plain map background.
 
 To retrain the model locally:
 
@@ -45,6 +94,8 @@ The raw export `data/Seattle_Real_Time_Fire_911_Calls_20261029.csv` (289 MB) is 
 | Step 14      | `scripts/evaluate_events.py`        | `data/modeling_dataset.csv` + event schedules → event effects and rolling-CV scores (printed)             |
 | Event effects | `scripts/make_event_effects.py`    | `data/modeling_dataset.csv`, `data/station_shift_counts.csv` + event schedules → `data/event_effects.csv`, `data/event_shifts.csv` (the app's Explore Events tables) |
 | Step 15      | `scripts/step15_weather_extremes.py` | `data/modeling_dataset_weather.csv` → forecast skill, effect size and CV for rare extreme weather (printed) |
+| Weather effects | `scripts/make_weather_effects.py` | `data/modeling_dataset.csv` + `data/weather_hourly_era5.csv` → `data/weather_effects.csv`, `data/weather_events.csv`, `data/weather_event_shifts.csv` (Explore > Weather) |
+| Alert thresholds | `scripts/check_alert_thresholds.py` | `data/weather_hourly_era5.csv` + `data/weather_hourly_gfs_global_day3.csv` → hits, misses and false alarms of the app's weather alert thresholds (printed) |
 | Step 16      | `scripts/tune_model.py`, `scripts/grid_search_model.py` | Compare baseline and special-day features, perform grid search using 2025 rolling CV, and save `results/tuning_cv.csv` |
 
 Scripts run from the repository root (`uv run python scripts/<name>.py`). Notebooks live in `notebooks/` and read files with `../data/`.
@@ -333,6 +384,8 @@ R scales the no-weather prediction when the forecast says strong wind. In each f
 - **Why the flags fail:** most of the damage comes from the freezing flag. On 2025's freezing shifts, F over-predicts by 39 calls citywide (MAE 24.3 → 54.2). The ERA5 freezing shifts in training include the late-December 2022 cold spell, which coincided with the Christmas peak (646 calls on 2022-12-23), so the model most likely learned that freezing means far more calls. Weighting the extreme shifts makes it worse.
 - **Sample size:** 2025 has only 7 strong-wind shifts (5 events), 6 of them in fold 4. Folds 2 and 3 have no strong-wind forecast, so R equals A there. Freezing has 19 shifts but 4 events, snow 4 shifts. These are case studies, not statistics; the script prints each 2025 strong-wind shift with the actual and predicted citywide calls.
 - **(d) More history:** ERA5 has 106 strong-wind shifts (82 events) in 2003–2019, 6.2 per year against 4.2 in 2022–2025, so about 6 times more events (2020–21 left out). This is not suitable for retraining: call coding changed several times between 2014 and 2022, so older counts are not on the same scale as 2022 onward. The older years could firm up the effect estimate, since a ratio to the surrounding weeks is less sensitive to slow coding changes, but that needs the raw export and would not fix the forecast's false alarms. Only the yearly counts are saved (`data/era5_strong_wind_counts_2003_2019.csv`).
+- **(e) Cold alert thresholds** (`scripts/check_alert_thresholds.py`, weather only): the app's cold alert uses forecast thresholds set in advance from the ERA5 ones plus the GFS bias of −1.0 °C: a hard freeze is a forecast low of −3 °C or colder (ERA5 −2 °C), and a cold spell is a forecast low of −1 °C or colder on 2+ shifts in a row (ERA5 0 °C). From 2024-01-21 to 2025 (711 shifts), the hard-freeze rule caught 3 of 4 hard-freeze shifts with 4 false alarms, and the cold-spell rule caught 7 of 19 cold-spell shifts with 4 false alarms. It missed the whole mild spell of 2025-01-18 to 01-29 (lows of −0.3 to −1.9 °C), when the forecast was not colder than ERA5. These are only 2 hard-freeze and 4 cold-spell events in one winter, so the thresholds are a starting point, not a validated rule.
+- **(f) Explore > Weather** (`scripts/make_weather_effects.py`): the same calls-vs-usual comparison for the app, with holidays and special days left out so a cold Christmas week does not look like weather. Hard freezes (lows of −2 °C or colder) and days 3 and later of a cold spell had about 40–50 more calls a shift than usual, while lows just below 0 °C changed little. Hot days (highs of 30 °C or more in ERA5) had about 12% more calls, but this is only 18 shifts in 8 events and the heat forecast has not been checked, so the app has no heat alert yet.
 - **Recommendation:** keep weather out of the model. In the app, a strong-wind forecast can at most show this note, without changing the predicted numbers: "Strong wind is forecast for this shift. Windstorms usually bring more calls than usual. Forecasts 3 days ahead often change, so the numbers above are not adjusted." The note gives no percentage, following the team's decision that app alerts stay qualitative. The measured effect is in (b) above. The app is for supervisors, so the note leaves out model-evaluation details (per the professor's feedback).
 
 ## Streamlit app
@@ -342,23 +395,26 @@ uv sync --frozen
 uv run streamlit run app.py
 ```
 
-The app only needs the CSVs already in `data/`, not the raw 911 export. Pick a shift date in the sidebar (it also shows the planning time); the Prediction tab then shows:
+The app only needs the CSVs already in `data/`, not the raw 911 export. Pick a shift date in the top bar (it also shows the planning time, defaulting to today's date in Seattle clamped to the picker range); the Prediction tab then shows:
 
+- on a laptop, the map on the left with the shift summary to its right; everything after that runs full width below the map (a phone stacks it all)
 - a "Data through" line: the end of the last shift that had finished at the planning time
-- expected calls for the whole city, with its likely range (about 4 in 5 similar station shifts and about 7 in 10 citywide totals landed inside it)
-- stations to watch: up to 5 stations whose estimate is at least 2 calls and 10% above their usual for this weekday (the rule is `WATCH_MIN_EXTRA` and `WATCH_MIN_SHARE` in `station_forecast.py`), or a plain note that none is
-- a station-area map shaded by expected calls compared with the usual for this weekday (blue quieter, orange busier; this is a forecast, so it does not use the slate shades of the Explore maps). Point at an area for its expected calls, likely range and usual; click up to 3 areas to compare them. A fourth click is refused with a message, and clicking a picked area again removes it. The "Compare stations (up to 3)" list under the map does the same and stays in step with the map
-- a side-by-side comparison of the picked stations: expected calls, likely range, usual, difference and any event warning (`event_warnings.py`; a note only, it does not change the estimate)
+- a plain one-sentence shift briefing at the top (quieter, about usual, a little busier or busier, naming up to 3 stations, with no percentages; or a plain note on a date with no estimate)
+- a weather alert right under the briefing when strong wind or hard cold is forecast, up to about 4 days ahead. Like the event warning it is a note only and does not change the estimate (`weather_alerts.py`, thresholds in Step 15 (a) and (e)). Demo dates use the saved day-3 forecast. Later dates download the forecast from Open-Meteo, which gives up after a few seconds and is cached for an hour; without a network the app says the forecast is unavailable. Shifts within 4 days also get a caption that links to NWS Seattle
+- a small weather line between the briefing and the alert: one icon for the shift (thunder, snow, sleet, heavy rain, rain, fog, strong wind, cloudy, partly cloudy or sunny, the most notable one in any hour of the 08:00 to 08:00 shift), the low and high, and the rain (mm) or snow (cm) when above zero. It uses the same forecast and the same download as the weather alert, so dates without a forecast show no line, and it does not change the estimate (`weather_now.py`; demo dates take the day-3 weather codes from `data/weather_codes_gfs_global_day3.csv`, made by `scripts/make_weather_codes.py`). The icons are optional local files in `static/weather_icons/` and are not in git; without them the line shows its words only
+- three bordered summary cards: citywide expected calls (with a range bar), the station with the biggest shift vs usual (with a range bar) and stations to watch (up to 5 stations at least 2 calls and 10% above usual, `WATCH_MIN_EXTRA` and `WATCH_MIN_SHARE` in `station_forecast.py`)
+- a flat, north-up station-area map (`forecast_map` in `station_areas.py`, separate from the sage Explore maps): a pale Carto basemap with nearby place names, white borders between areas, colour shows expected minus usual (light blue quieter, salmon busier), and each area shows its station number (plus expected calls where it fits). Point at an area for its expected calls, likely range and usual comparison; click up to 3 areas to outline them with coloured rims and compare them. A fourth click is refused with a message, and clicking a picked area again removes it. The "Compare stations (up to 3)" list under the map and the ticked rows of the ranked table stay in step with the map. The map never moves (no drag, zoom or zoom buttons), so the whole city always shows
+- a side-by-side comparison of the picked stations in bordered cards, each with its metric, range bar and any event warning (`event_warnings.py`; a note only, it does not change the estimate)
 - the call type mix: average medical, fire, non-emergency and other calls per shift in the same months of earlier years, for the picked stations or for the whole city. It is history, not a forecast
-- a ranked table of all stations (the picked ones are highlighted) that you can download as CSV
-- an hourly breakdown and the last 90 days of calls for the first picked station, or for the whole city when none is picked
-- an Explore tab with three sub-tabs: Citywide (station-area map, last 90 days, weekday, month and call type), Stations (click up to 3 station areas to compare them with the average station; it keeps its own picks) and Events (how calls changed near the venues on past event days, 2022 to 2025). Code: `station_areas.py`, `station_compare.py`, `event_explore.py`; the Events tables come from `scripts/make_event_effects.py`
+- a ranked table of all stations, busiest first: expected calls with a bar, likely range ("31 to 50"), ▲/▼ vs usual in the busier/quieter colours, and "Last 4 weeks": one solid bar per shift for the 28 days up to the last shift finished at the planning time (Sep 24 to Oct 21 for Oct 24), on one scale for all rows, coloured mint (fewer calls) to rose (more); a bar on the shift's weekday says "same weekday" when pointed at. Days after the last day of data use the app's own estimates, drawn a little lighter, and the heading says "estimated after Oct 28". Ticking a row picks that station like a map click (same 3-station limit); picked rows are ticked and their names take the station's colour and pick number. Over Expected and Last 4 weeks the pointer is a hand and the row is shaded. Clicking Last 4 weeks opens a window with the station's history known at the planning time: 4 weeks by default, 3 months or all, the same weekdays marked, the usual as a dotted line and the estimate with its likely range on the right. Clicking Expected opens a window with the station's hourly breakdown, and "Citywide hourly breakdown" opens it for the whole city. The windows close on a click outside, Esc or the X. The table downloads as CSV with the same 8 columns as before (Expected calls, Low, High, Usual for this weekday, Difference, shift date, planning time)
+- soft studio sounds: a hover tick and a click only on things that act (buttons, including Download and the window buttons, tabs, a clickable map area while the hand shows, and the table cells that tick a station or open its window); the date box, the compare list and its names, and plain text stay silent. Closing a window with its X, Esc or a click outside plays the studio's click out once, with no click. Nothing plays until the first click, because browsers block sound until then; with sound blocked the app works the same (`ui_sounds.py`, files in `static/sounds/`, served by Streamlit's static file serving in `.streamlit/config.toml`)
+- an Explore tab with four sub-tabs: Citywide (station-area map, last 90 days, weekday, month and call type), Stations (click up to 3 station areas to compare them with the average station; it keeps its own picks), Events (how calls changed near the venues on past event days, 2022 to 2025) and Weather (calls on cold and hot days, during cold spells and in past weather events, 2022 to 2025). Code: `station_areas.py`, `station_compare.py`, `event_explore.py`, `weather_explore.py`; the Events tables come from `scripts/make_event_effects.py` and the Weather charts from `scripts/make_weather_effects.py`
 
-The Prediction tab code is `app.py` with `station_forecast.py` (watch list, map shades, call type mix, click handling, "Data through" line).
+The Prediction tab code is `app.py` with `station_forecast.py` (briefing sentence, range bar math, watch list, map shades, call type mix, ranked table rows and download, click handling, "Data through" line) and `prediction_cards.py` (HTML for the briefing, range bars, map legend and the station table, which runs as a small `st.components.v2` component so its cells can show a hand pointer and send clicks). `ui_sounds.py` adds the UI sounds as one hidden component with one listener for the whole page. `chart_theme.py` holds the colours (the six-colour palette and the steps made from it, also used by `style.css` and `.streamlit/config.toml`), fonts and chart builders that both tabs share.
 
-The app has one forecast, from the saved Poisson GBM through `predict.py`. The model is loaded once from `models/poisson_gbm.joblib`, with its configuration and training cutoff defined in `model_metadata.json`. The "Usual for this weekday" column is each station's average for the same weekday in earlier shifts, shown next to the forecast for comparison.
+The app has one forecast, from the saved Poisson GBM through `predict.py`. The model is loaded once from `models/poisson_gbm.joblib`, with its configuration and training cutoff defined in `model_metadata.json`. The usual for this weekday is each station's average for the same weekday in earlier shifts, shown next to the forecast for comparison.
 
-How far ahead: the app shows every date from the model's first usable date (January 3, 2026) to the last row of `data/forecast_features.csv`, 90 days after the last day of counts (January 26, 2027); the sidebar says "Estimates are available up to Jan 26, 2027." Every date after the counts is labelled Forecast. The first 3 (October 29 to 31) use real recent calls. From November 1 the heading adds "long-range estimate", because the five lag inputs (`lag3`, `lag7`, `avg7`, `avg28`, `same_weekday_avg4`) are typical values from `data/lag_fill_means.csv` (Step 4). A later date gets "No estimate for this date yet" instead of an error. The model is not retrained. Weather inputs are not used.
+How far ahead: the app shows every date from the model's first usable date (January 3, 2026) to the last row of `data/forecast_features.csv`, 90 days after the last day of counts (January 26, 2027); the top bar says "Estimates are available up to Jan 26, 2027." Every date after the counts is labelled Forecast. The first 3 (October 29 to 31) use real recent calls. From November 1 the heading adds "long-range estimate", because the five lag inputs (`lag3`, `lag7`, `avg7`, `avg28`, `same_weekday_avg4`) are typical values from `data/lag_fill_means.csv` (Step 4). A later date gets "No estimate for this date yet" instead of an error. The model is not retrained. Weather inputs are not used.
 
 The app passes the selected shift date to `predict.py` so the special-day flags (New Year's Eve, the day after Thanksgiving, December 24 to 26) are built from it automatically.
 
@@ -385,11 +441,13 @@ First-time setup (once per computer):
    - or in Docker Desktop, Settings > Advanced, turn on System CLI tools (it may ask for your password)
 3. Run `docker --version` again. It should print a version number.
 
-Build the image from the repository root (excludes `.venv`, `.git`, `.env`, and the raw 289 MB 911 export):
+Build the image from the repository root, the `CallCast-Seattle` folder (about 2 minutes the first time):
 
 ```bash
 docker build -t callcast-seattle .
 ```
+
+The image holds the app code, `models/`, `data/`, `static/` and `.streamlit/`. It leaves out `.venv`, `.git`, `.env`, the notebooks, the docs and the raw 289 MB 911 export (`.dockerignore`). It copies whatever is in `static/weather_icons/` at build time, so build after copying the icons in if you want them; without them the image still runs (see "Setup and run").
 
 Start the app on port 8501:
 
@@ -397,11 +455,11 @@ Start the app on port 8501:
 docker run --rm -p 8501:8501 callcast-seattle
 ```
 
-Open `http://localhost:8501` in a browser. Stop it with Ctrl+C in the terminal. The container exposes `/_stcore/health` for health checks.
+Open `http://localhost:8501` in a browser. Stop it with Ctrl+C in the terminal; `--rm` then removes the container. If port 8501 is busy, use `-p 8502:8501` and open `http://localhost:8502`.
 
-If port 8501 is busy, use `-p 8502:8501` and open `http://localhost:8502`.
+To run it in the background instead, add `-d --name callcast`, and stop it with `docker stop callcast`. The container reports itself healthy in `docker ps` once `/_stcore/health` answers.
 
-Or build and start with Docker Compose:
+Or build and start with Docker Compose (the same port 8501), and stop it with Ctrl+C, then `docker compose down`:
 
 ```bash
 docker compose up --build

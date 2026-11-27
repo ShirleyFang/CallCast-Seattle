@@ -2,9 +2,13 @@
 .*
 !.streamlit
 
-# Python caches
-__pycache__
-*.py[cod]
+# OS files and caches in any folder
+**/.DS_Store
+**/._*
+**/Thumbs.db
+**/__pycache__
+**/*.py[cod]
+**/.ipynb_checkpoints
 
 # Unused repo folders and non-runtime files
 _work
@@ -21,6 +25,7 @@ data/Seattle_Real_Time_Fire_911_Calls_*.csv
 data/raw_source_provenance.json
 data/modeling_dataset_weather.csv
 data/weather_hourly_*.csv
+!data/weather_hourly_gfs_global_day3.csv
 data/era5_strong_wind_counts_2003_2019.csv
 data/event_shifts.csv
 data/lag_fill_means.csv

@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
@@ -15,6 +16,7 @@ ROOT = Path(__file__).resolve().parent
 GROUPS = ["fire", "medical", "non_emergency", "other"]
 # Each station's share of calls by shift hour, for the hourly breakdown.
 HOURLY_PROFILE = "data/hourly_profile.csv"
+GAP_MESSAGE = "No estimate for this date: the call data for this shift has a gap."
 
 
 def load_tables(root=ROOT):
@@ -183,7 +185,15 @@ def first_model_date(root=ROOT):
     return (trained + pd.Timedelta(days=3)).date()
 
 
-def target_dates(counts, earliest=None, latest=None):
+def seattle_today():
+    # Current Seattle date, or CALLCAST_TODAY (YYYY-MM-DD) when fixed for tests.
+    fixed = os.environ.get("CALLCAST_TODAY")
+    if fixed:
+        return date.fromisoformat(fixed)
+    return pd.Timestamp.now(tz="America/Los_Angeles").date()
+
+
+def target_dates(counts, earliest=None, latest=None, today=None):
     """Use the loaded count table to choose the date picker's range and starting date.
 
     earliest is the first date the model can serve; the picker starts there if it is later.
@@ -200,8 +210,9 @@ def target_dates(counts, earliest=None, latest=None):
         raise ValueError(
             "At least 32 calendar shifts are needed for this historical demo."
         )
-    # Prefer the example date, but keep it inside whichever snapshot is installed.
-    default = min(max(pd.Timestamp("2026-10-24"), first), last)
+    # Open on today (Seattle time), clamped inside whichever snapshot is installed.
+    day = seattle_today() if today is None else pd.Timestamp(today).date()
+    default = min(max(pd.Timestamp(day).normalize(), first), last)
     return first.date(), last.date(), default.date()
 
 
@@ -352,9 +363,7 @@ def learned_predictions(features, target, station_ids, root=ROOT):
         )
     if rows.empty:
         # Shifts with a gap in the call data were dropped from modeling_dataset.csv.
-        raise ValueError(
-            "No estimate for this date: the call data for this shift has a gap."
-        )
+        raise ValueError(GAP_MESSAGE)
     if rows["Station"].duplicated().any() or set(rows["Station"]) != set(station_ids):
         raise ValueError(
             "modeling_dataset.csv needs one row per station for this shift."
@@ -452,7 +461,18 @@ def citywide_hourly(root, target, estimates):
     profile = pd.read_csv(path) if path.exists() else None
     parts = [hourly_allocation(root, target, s, v, profile) for s, v in estimates.items()]
     total = sum(p["expected_calls"].to_numpy() for p in parts)
-    return parts[0].assign(expected_calls=total)
+    # The share becomes the city's, not the first station's (the chart's tooltip shows it).
+    return parts[0].assign(expected_calls=total, share=total / total.sum())
+
+
+def station_hour_peaks(root, target, estimates):
+    # Each station's busiest expected hour, read from hourly_profile.csv once: the busiest of
+    # them tops the shared hourly colour scale.
+    profile = pd.read_csv(root / HOURLY_PROFILE)
+    return [
+        hourly_allocation(root, target, s, v, profile)["expected_calls"].max()
+        for s, v in estimates.items()
+    ]
 
 
 def load_ranges(root=ROOT):

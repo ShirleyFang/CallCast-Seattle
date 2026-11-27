@@ -1,0 +1,5 @@
+event,kind,start,end,note,shifts,lowest_low,highest_high,strongest_gust,snow_cm,usual_calls,calls,extra_pct,holiday_shifts
+"Dec 2022 cold, snow and ice",cold,2022-12-20,2022-12-23,"Snow and lows of -5 °C, then freezing rain. Christmas week, so part of the change may be the holiday.",4,-5.0,6.8,55.8,4.1,298.5,422.0,40.9,0
+Jan 2024 cold snap,cold,2024-01-11,2024-01-16,The coldest spell in the data: six days with lows of about -5 to -10 °C. Includes Martin Luther King Jr. Day.,6,-10.0,6.3,44.3,1.8,301.9,459.2,53.0,2
+Jul 2022 heat wave,heat,2022-07-26,2022-07-31,Six days in a row above 30 °C.,6,17.5,32.7,24.1,0.0,309.4,351.8,14.1,0
+Nov 2024 windstorm,wind,2024-11-19,2024-11-19,A strong storm with gusts near 80 km/h.,1,3.8,8.7,77.8,0.0,323.6,462.0,42.8,0

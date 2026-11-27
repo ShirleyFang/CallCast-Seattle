@@ -8,17 +8,40 @@ stations, so it sits on the same scale as one station.
 import pandas as pd
 import plotly.graph_objects as go
 
+from chart_theme import (
+    AVERAGE_GREY,
+    AXIS_TITLE_FONT,
+    BORDER_COLOR,
+    CATEGORY_COLORS,
+    CATEGORY_EDGES,
+    CATEGORY_TEXT,
+    FONT_FAMILY,
+    FS_XS,
+    GRID_COLOR,
+    INK,
+    MUTED_INK,
+    ROSE_LINE,
+    STATION_COLORS,
+    STATION_EDGES,
+    SURFACE,
+    add_gap_fills,
+    apply_plotly_theme,
+    day_colors,
+    day_gradient,
+    hex_to_rgba,
+    rgb,
+)
+
 MAX_COMPARE = 3
 AVERAGE = "Average station"
 GROUPS = ["fire", "medical", "non_emergency", "other"]
 GROUP_NAMES = {"fire": "Fire", "medical": "Medical", "non_emergency": "Non-emergency", "other": "Other"}
 WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 # Same colours as chartCategoricalColors in .streamlit/config.toml; the average is grey, dashed.
-COLORS = ["#2F5D8A", "#A4282B", "#C99A3B"]
-AVERAGE_COLOR = "#6B7280"
-# Category colours stay clear of the station colours, so "red" always means one station.
-CATEGORY_COLORS = {"Fire": "#E07A5F", "Medical": "#3D405B", "Non-emergency": "#81B29A", "Other": "#D9C9A3"}
-PLOT_CONFIG = {"displayModeBar": False}  # same as the app's other charts: no plotly toolbar
+# The city alone is a deep rose line over the mint-to-rose fill, its bars on that same scale.
+COLORS = STATION_COLORS
+AVERAGE_COLOR = AVERAGE_GREY
+CITY_COLOR = ROSE_LINE
 TREND_DAYS = 90
 ROLLING = 7
 CITY = "Citywide"  # the whole city's total, for the Explore > Citywide view
@@ -54,9 +77,7 @@ def only_type(rows, column):
 def station_color(stations, name, alpha=None):
     """The chart colour of a picked station, as hex or as an RGBA list for the map."""
     hex_color = COLORS[list(stations).index(name) % len(COLORS)]
-    if alpha is None:
-        return hex_color
-    return [int(hex_color[i : i + 2], 16) for i in (1, 3, 5)] + [alpha]
+    return hex_color if alpha is None else rgb(hex_color, alpha)
 
 
 def average_station(history):
@@ -164,30 +185,43 @@ def _style(name, i):
     return {"color": COLORS[i % len(COLORS)]}
 
 
-def _layout(fig, y_title, height=320):
-    fig.update_layout(
-        height=height,
-        margin={"l": 0, "r": 0, "t": 10, "b": 0},
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": "#1F2A36"},
-        legend={"orientation": "h", "y": -0.18},
-        yaxis={"title": y_title, "gridcolor": "#E6E1D9", "rangemode": "tozero"},
-        xaxis={"gridcolor": "#E6E1D9"},
+def _layout(fig, y_title, height=320, show_legend=True, legend_top=True):
+    return apply_plotly_theme(
+        fig, y_title=y_title, height=height, show_legend=show_legend, legend_top=legend_top
     )
-    return fig
 
 
 def trend_chart(table):
     fig = go.Figure()
+    single = len(table.columns) == 1
     for i, name in enumerate(table.columns):
         style = _style(name, i)
-        fig.add_trace(go.Scatter(
-            x=table.index, y=table[name], name=name, mode="lines",
-            line={"width": 2, **style}, connectgaps=False,
-            hovertemplate="%{x|%b %d}: %{y:.1f} calls<extra>" + name + "</extra>",
-        ))
-    return _layout(fig, "Calls per shift (7-shift average)")
+        trace = {
+            "x": table.index,
+            "y": table[name],
+            "name": name,
+            "mode": "lines",
+            "line": {"width": 1.8 if name == AVERAGE else 3 if single else 2.5, **style},
+            "connectgaps": False,
+            "hovertemplate": "%{x|%b %d}: <b>%{y:.1f}</b> calls<extra>" + name + "</extra>",
+        }
+        if single:
+            top = float(table[name].max()) * 1.1
+            add_gap_fills(
+                fig, table[name], hex_to_rgba(style["color"], 0.14), day_gradient(top)
+            )
+        fig.add_trace(go.Scatter(**trace))
+    if single:
+        avg_val = float(table.iloc[:, 0].mean())
+        if pd.notna(avg_val):
+            fig.add_hline(
+                y=avg_val,
+                line={"color": MUTED_INK, "dash": "dot", "width": 1.25},
+                annotation_text=f"Avg {avg_val:.1f}",
+                annotation_position="top right",
+                annotation_font={"color": MUTED_INK, "size": FS_XS, "family": FONT_FAMILY},
+            )
+    return _layout(fig, "Calls per shift (7-shift average)", show_legend=not single)
 
 
 STACK_ORDER = ["medical", "fire", "other", "non_emergency"]  # bottom to top: biggest first
@@ -213,50 +247,71 @@ def stacked_trend_chart(table):
     table = table.dropna(how="any")
     fig = go.Figure()
     for name in table.columns:
+        color = CATEGORY_COLORS[name]
         fig.add_trace(go.Scatter(
             x=table.index, y=table[name], name=name, mode="lines", stackgroup="calls",
-            line={"width": 0.5, "color": CATEGORY_COLORS[name]}, fillcolor=CATEGORY_COLORS[name],
+            line={"width": 1.2, "color": CATEGORY_EDGES[name]}, fillcolor=hex_to_rgba(color, 0.78),
             hovertemplate="%{y:.0f}<extra>" + name + "</extra>",
         ))
     total = table.sum(axis=1, min_count=1)
-    fig.add_trace(go.Scatter(  # thin outline on top, so the all-calls total shows on hover
+    fig.add_trace(go.Scatter(  # crisp outline on top, so the all-calls total shows on hover
         x=table.index, y=total, name="All calls", mode="lines", showlegend=False,
-        line={"width": 1, "color": CITY_COLOR}, hovertemplate="%{y:.0f}<extra>All calls</extra>",
+        line={"width": 2, "color": INK}, hovertemplate="%{y:.0f}<extra>All calls</extra>",
     ))
-    fig = _layout(fig, "Calls per shift (7-shift average)")
-    fig.update_layout(hovermode="x unified", legend={"orientation": "h", "y": -0.18, "traceorder": "reversed"})
+    fig = _layout(fig, "Calls per shift (7-shift average)", height=340, show_legend=True, legend_top=True)
+    fig.update_layout(
+        hovermode="x unified",
+        legend={"orientation": "h", "y": 1.14, "yanchor": "top", "x": 0, "traceorder": "reversed"},
+    )
     return fig
 
 
 def monthly_chart(table):
     """Long-term view: average calls per shift in each month since the data starts."""
     fig = go.Figure()
+    single = len(table.columns) == 1
     for i, name in enumerate(table.columns):
         style = _style(name, i)
         fig.add_trace(go.Scatter(
-            x=table.index, y=table[name], name=name, mode="lines",
-            line={"width": 2, **style}, connectgaps=False,
-            hovertemplate="%{x|%b %Y}: %{y:.1f} calls per shift<extra>" + name + "</extra>",
+            x=table.index, y=table[name], name=name, mode="lines+markers",
+            line={"width": 1.8 if name == AVERAGE else 2.3, **style},
+            marker={"size": 4, "color": style["color"]},
+            connectgaps=False,
+            hovertemplate="%{x|%b %Y}: <b>%{y:.1f}</b> calls per shift<extra>" + name + "</extra>",
         ))
-    return _layout(fig, "Average calls per shift")
+    return _layout(fig, "Average calls per shift", show_legend=not single)
 
 
 def weekday_chart(table):
     fig = go.Figure()
+    single = len(table.columns) == 1
     for i, name in enumerate(table.columns):
         style = _style(name, i)
-        fig.add_trace(go.Bar(
-            x=table.index, y=table[name], name=name, marker={"color": style["color"]},
-            marker_pattern_shape="/" if name == AVERAGE else "",
-            hovertemplate="%{x}: %{y:.1f} calls<extra>" + name + "</extra>",
-        ))
-    return _layout(fig.update_layout(barmode="group"), "Average calls per shift")
-
-
-# Neutral slate for "the whole city / stations not picked", so colour always means a picked
-# station: lighter for the all-stations bars, darker for citywide lines and bars.
-BAR_COLOR = "#8C97A4"
-CITY_COLOR = "#5F6E7F"
+        marker = {"color": style["color"], "cornerradius": 6}
+        if single:
+            # The city alone: each weekday on the mint-to-rose scale, from the quietest day
+            # (mint) to the busiest (rose), so close averages still look different.
+            col = table[name]
+            fills, edges = zip(*(day_colors(v, col.max(), col.min()) for v in col))
+            marker.update(color=list(fills), line={"color": list(edges), "width": 1})
+        bar_kw = {
+            "x": table.index,
+            "y": table[name],
+            "name": name,
+            "marker": marker,
+            "marker_pattern_shape": "/" if name == AVERAGE else "",
+            "hovertemplate": "%{x}: <b>%{y:.1f}</b> calls<extra>" + name + "</extra>",
+        }
+        if single:
+            bar_kw["text"] = [f"{v:.0f}" for v in table[name]]
+            bar_kw["textposition"] = "outside"
+            bar_kw["cliponaxis"] = False
+        fig.add_trace(go.Bar(**bar_kw))
+    fig = _layout(fig.update_layout(barmode="group"), "Average calls per shift", show_legend=not single)
+    if single:
+        top = float(table.iloc[:, 0].max()) * 1.15
+        fig.update_yaxes(range=[0, max(top, 1.0)])
+    return fig
 
 
 def station_means(history, station_ids):
@@ -265,22 +320,29 @@ def station_means(history, station_ids):
 
 
 def station_bar_chart(means, picked=()):
-    """All stations' averages in the theme green; picked stations in their comparison colours;
-    the average station as a grey dashed line."""
+    """All stations' averages on the mint-to-rose scale; picked stations in their comparison
+    colours; the average station as a dashed line."""
     picked = [s for s in picked if s in means.index][:MAX_COMPARE]
-    colors = [station_color(picked, s) if s in picked else BAR_COLOR for s in means.index]
+    shades = [day_colors(v, means.max()) for v in means]
+    # Every bar has a thin darker edge of its colour so the pale ones show on the panel.
+    pick_edges = dict(zip(COLORS, STATION_EDGES))
+    colors = [station_color(picked, s) if s in picked else f for s, (f, _) in zip(means.index, shades)]
+    edges = [pick_edges.get(c, e) for c, (_, e) in zip(colors, shades)]
     fig = go.Figure(go.Bar(
-        x=list(means.index), y=means.to_numpy(), marker={"color": colors},
-        hovertemplate="%{x}: %{y:.1f} calls per shift<extra></extra>", showlegend=False,
+        x=list(means.index), y=means.to_numpy(),
+        marker={"color": colors, "cornerradius": 4, "line": {"color": edges, "width": 1}},
+        hovertemplate="%{x}: <b>%{y:.1f}</b> calls per shift<extra></extra>", showlegend=False,
     ))
     average = means.mean()
     fig.add_hline(
-        y=average, line={"color": AVERAGE_COLOR, "dash": "dash", "width": 1.5},
+        y=average, line={"color": AVERAGE_COLOR, "dash": "dash", "width": 1.6},
         annotation_text=f"Average station {average:.1f}", annotation_position="top right",
-        annotation_font={"color": AVERAGE_COLOR, "size": 12},
+        annotation_font={"color": INK, "size": FS_XS, "family": FONT_FAMILY},
+        annotation_bgcolor=SURFACE, annotation_bordercolor=BORDER_COLOR,
     )
-    fig = _layout(fig, "Average calls per shift", height=340)
-    fig.update_xaxes(tickangle=-90, tickfont={"size": 11})
+    fig = _layout(fig, "Average calls per shift", height=370, show_legend=False)
+    fig.update_layout(margin={"l": 8, "r": 12, "t": 20, "b": 56})
+    fig.update_xaxes(tickangle=-90, tickfont={"size": FS_XS})
     return fig
 
 
@@ -292,21 +354,29 @@ def category_chart(table, counts=None):
     """
     fig = go.Figure()
     for category in table.columns:
-        hover = "%{y}: %{x:.0f}% " + category.lower()
+        hover = "%{y}: <b>%{x:.0f}%</b> " + category.lower()
         extra = {}
         if counts is not None:
             extra["customdata"] = counts[category].to_numpy()
             hover += " (about %{customdata:.1f} calls per shift)"
         fig.add_trace(go.Bar(
             y=table.index, x=table[category], name=category, orientation="h",
-            marker={"color": CATEGORY_COLORS[category]},
+            marker={"color": CATEGORY_COLORS[category], "cornerradius": 4,
+                    "line": {"color": CATEGORY_EDGES[category], "width": 1}},
+            text=[f"{v:.0f}%" if v >= 12 else "" for v in table[category]],
+            textposition="inside", insidetextanchor="middle",
+            textfont={"size": FS_XS, "family": FONT_FAMILY, "color": CATEGORY_TEXT[category]},
             hovertemplate=hover + "<extra></extra>", **extra,
         ))
-    fig = _layout(fig, "", height=140 + 45 * len(table))
+    fig = _layout(fig, "", height=170 + 48 * len(table), show_legend=True, legend_top=True)
     fig.update_layout(
         barmode="stack",
-        xaxis={"title": "Share of calls (%)", "range": [0, 100], "gridcolor": "#E6E1D9"},
-        legend={"orientation": "h", "y": -0.35, "traceorder": "normal"},
+        margin={"l": 8, "r": 12, "t": 50, "b": 34},
+        xaxis={
+            "title": {"text": "Share of calls (%)", "font": AXIS_TITLE_FONT}, "range": [0, 100],
+            "showgrid": True, "gridcolor": GRID_COLOR, "griddash": "dot",
+        },
+        legend={"orientation": "h", "y": 1.24 if len(table) <= 2 else 1.16, "yanchor": "top", "x": 0, "traceorder": "normal"},
     )
-    fig.update_yaxes(autorange="reversed")
+    fig.update_yaxes(autorange="reversed", showgrid=False)
     return fig

@@ -16,6 +16,7 @@
 
 import os
 import sys
+from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -24,6 +25,8 @@ from sklearn.ensemble import HistGradientBoostingRegressor
 
 from cv_utils import DATE_COL, STATION_COL, TARGET, build_features, iter_folds, load_dataset, metrics
 from feature_sets import BASELINE_NUMERIC
+from weather_utils import events
+from weather_utils import usual as usual_calls
 
 
 # constant: model and data (same as step 9)
@@ -87,19 +90,8 @@ shift_flags = {'era5': flags('era5'), 'fc': flags('fc')}
 era5_any = shift_flags['era5'].eq(1).any(axis=1)            # any ERA5 extreme: left out of "usual"
 
 
-def events(dates):
-    """Group consecutive shift dates into events; returns a Series date -> event id."""
-    d = pd.Series(sorted(dates))
-    return pd.Series(((d.diff() != pd.Timedelta(days=1)).cumsum()).to_numpy(), index=d.to_numpy())
-
-
-def usual(day, allowed=None):
-    """Mean citywide calls on the same weekday +-USUAL_WEEKS weeks, not extreme, inside `allowed`."""
-    window = [day + pd.Timedelta(weeks=k) for k in range(-USUAL_WEEKS, USUAL_WEEKS + 1) if k != 0]
-    window = [w for w in window if w in city.index and not era5_any.get(w, False)]
-    if allowed is not None:
-        window = [w for w in window if w in allowed]
-    return (city.loc[window, 'calls'].mean() if window else np.nan), window
+# usual(day, allowed=None): same weekday +-USUAL_WEEKS weeks, not extreme, inside `allowed`
+usual = partial(usual_calls, city['calls'], era5_any, weeks=USUAL_WEEKS)
 
 
 # 2. (a) forecast skill: shift-level hits / misses / false alarms

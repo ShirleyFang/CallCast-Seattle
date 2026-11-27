@@ -10,6 +10,24 @@ import pandas as pd
 import pydeck as pdk
 from shapely.geometry import mapping
 
+import text_blocks as tb
+from chart_theme import (
+    FS_SM,
+    FS_XS,
+    INK,
+    LIGHT_TEXT,
+    MOSS,
+    MOSS_EDGE,
+    OCHRE,
+    OCHRE_EDGE,
+    PLOT_CONFIG,
+    SAGE_GREY,
+    SURFACE,
+    event_impact_chart,
+    rgb,
+    style_event_table,
+)
+
 ROOT = Path(__file__).resolve().parent
 EFFECTS_PATH = ROOT / "data/event_effects.csv"
 TABLE_NAMES = {
@@ -36,11 +54,11 @@ def load_event_effects(path=EFFECTS_PATH):
 # Stations with a clear event effect, one colour each (fill, outline): gold for SFD 10
 # (Lumen Field / T-Mobile Park), green for SFD 22 (Husky Stadium); others fall back to gold.
 AFFECTED_COLORS = {
-    "SFD 10": ([201, 154, 59, 150], [150, 110, 30]),
-    "SFD 22": ([94, 125, 90, 150], [60, 85, 57]),
+    "SFD 10": (rgb(OCHRE, 150), rgb(OCHRE_EDGE)),
+    "SFD 22": (rgb(MOSS, 150), rgb(MOSS_EDGE)),
 }
-DEFAULT_AFFECTED = ([201, 154, 59, 150], [150, 110, 30])
-VENUE_COLOR = [31, 42, 54]
+DEFAULT_AFFECTED = AFFECTED_COLORS["SFD 10"]
+VENUE_COLOR = rgb(INK)
 # Lumen Field and T-Mobile Park are about 400 m apart: put one label above, one below.
 LABEL_OFFSETS = {"T-Mobile Park": [0, 16]}
 
@@ -121,7 +139,7 @@ def venue_map(effects, areas, boundary):
          "features": [{"type": "Feature", "geometry": mapping(a), "properties": {}} for a in areas.values()]},
         id="event-station-areas",
         stroked=True, filled=False,
-        get_line_color=[47, 93, 138, 160], get_line_width=1,
+        get_line_color=rgb(SAGE_GREY, 160), get_line_width=1,
         line_width_min_pixels=1, line_width_max_pixels=1,
     )
     affected = pdk.Layer(
@@ -138,7 +156,7 @@ def venue_map(effects, areas, boundary):
         "GeoJsonLayer",
         {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": mapping(boundary), "properties": {}}]},
         id="event-city-boundary",
-        stroked=True, filled=False, get_line_color=[31, 42, 54],
+        stroked=True, filled=False, get_line_color=VENUE_COLOR,
         get_line_width=1, line_width_min_pixels=3, line_width_max_pixels=3,
     )
     venues = venue_rows(effects)
@@ -152,16 +170,16 @@ def venue_map(effects, areas, boundary):
     labels = pdk.Layer(
         "TextLayer", venues, id="event-venue-labels",
         get_position=["lon", "lat"], get_text="venue", get_pixel_offset="offset",
-        get_size=13, get_color=VENUE_COLOR,  # centred on the dot by default
+        get_size=FS_XS, get_color=VENUE_COLOR,  # centred on the dot by default
         # The app's font. pydeck keeps a string as text only if it starts and ends with the
         # same quote (which it strips); any other string becomes a JavaScript expression.
-        font_family="'Public Sans, Helvetica Neue, Arial, sans-serif'",
-        font_weight=600, background=True, get_background_color=[250, 248, 245, 220],
+        font_family="'Figtree, Helvetica Neue, Arial, sans-serif'",
+        font_weight=600, background=True, get_background_color=rgb(SURFACE, 220),
     )
     tooltip = {
         # Plain text: the map escapes HTML inside values, so <br/> would show as text.
         "text": "{title}\n{body}",
-        "style": {"backgroundColor": "#1F2A36", "color": "white", "fontSize": "13px",
+        "style": {"backgroundColor": INK, "color": LIGHT_TEXT, "fontSize": f"{FS_SM}px",
                   "maxWidth": "340px", "lineHeight": "1.45"},
     }
     return pdk.Deck(
@@ -181,11 +199,11 @@ def effects_table(effects):
     return table.rename(columns=TABLE_NAMES)
 
 
-def _show_table(st, rows):
+def _show_table(st, rows, clear=True):
     """One effects table: one decimal everywhere, signed changes, every row visible."""
     one_decimal = st.column_config.NumberColumn(format="%.1f")
     st.dataframe(
-        effects_table(rows),
+        style_event_table(effects_table(rows), clear=clear),
         hide_index=True,
         width="stretch",
         height=38 + 35 * len(rows),  # header + rows, so no row hides behind a scrollbar
@@ -208,38 +226,74 @@ def show_event_effects(st, areas=None, boundary=None, path=EFFECTS_PATH):
     years = effects["years"].iloc[0]
     first, last = years.split("-")
     # Unlike Citywide and Stations, these numbers are fixed: they do not follow the date.
-    st.caption(
-        f"Past event days from Jan {first} to Dec {last}. These numbers do not change with "
-        "the selected date."
+    st.html(
+        tb.note(
+            f"Past event days from Jan {first} to Dec {last}. These numbers do not change with "
+            "the selected date."
+        )
     )
     if areas is not None and boundary is not None:
-        st.markdown("##### Venues and the stations they affect")
-        st.pydeck_chart(venue_map(effects, areas, boundary))
-        st.caption(
-            "Dark dots are the four large venues. Colored areas are the stations where calls "
-            "were clearly higher on event days: gold for SFD 10 (Lumen Field, T-Mobile Park), "
-            "green for SFD 22 (Husky Stadium). Point at a venue or a colored area for details."
+        with st.container(key="explore_card_venue_map"):
+            st.markdown("##### Venues and the stations they affect")
+            st.pydeck_chart(venue_map(effects, areas, boundary))
+            st.html(
+                tb.block(
+                    tb.terms(
+                        [
+                            ("Dark dots", "The four large venues."),
+                            (
+                                "Colored areas",
+                                "The stations where calls were clearly higher on event days: gold "
+                                "for SFD 10 (Lumen Field, T-Mobile Park), green for SFD 22 (Husky "
+                                "Stadium).",
+                            ),
+                        ]
+                    ),
+                    tb.hints(["{point} Point at a venue or a colored area for details."]),
+                )
+            )
+    with st.container(key="explore_card_event_impact"):
+        st.markdown("##### How calls changed near the venues on past event days")
+        st.html(
+            tb.block(
+                tb.lead(f"For each venue, the 2 nearest stations. Based on {years}."),
+                tb.terms(
+                    [
+                        (
+                            "Usual calls",
+                            "The same station and weekday, up to 4 weeks before and after, without "
+                            "that kind of event.",
+                        )
+                    ]
+                ),
+            )
         )
-    st.markdown("##### How calls changed near the venues on past event days")
-    st.caption(
-        "For each venue, the 2 nearest stations. Usual calls = the same station and weekday, "
-        "up to 4 weeks before and after, without that kind of event. "
-        f"Based on {years}."
-    )
+        st.plotly_chart(event_impact_chart(effects), width="stretch", config=PLOT_CONFIG)
     clear = effects[effects["clear"]]
     st.markdown("**Clear effect**")
-    _show_table(st, clear)
+    _show_table(st, clear, clear=True)
     chosen_on = effects["chosen_on"].iloc[0] if "chosen_on" in effects else years
-    st.caption(
-        "On these event days the station usually had more calls than on similar days: at "
-        "least 10 events, at least 10% more, and consistent from event to event (pairs "
-        f"chosen on {chosen_on}). These are averages: some event days were much busier and "
-        "some were not busier at all. The extra calls were mostly medical and non-emergency; "
-        "fire calls did not change."
+    st.html(
+        tb.block(
+            tb.lead(
+                "On these event days the station usually had more calls than on similar days. "
+                "The extra calls were mostly medical and non-emergency; fire calls did not change."
+            ),
+            tb.note(
+                "These are averages: some event days were much busier and some were not busier "
+                "at all."
+            ),
+            tb.more(
+                "Clear means at least 10 events, at least 10% more, and consistent from event to "
+                f"event (pairs chosen on {chosen_on})."
+            ),
+        )
     )
     st.markdown("**No clear effect**")
-    _show_table(st, effects[~effects["clear"]])
-    st.caption(
-        "Smaller or less consistent changes. Arena events at Climate Pledge Arena and most "
-        "games at T-Mobile Park did not change calls much at the nearest stations."
+    _show_table(st, effects[~effects["clear"]], clear=False)
+    st.html(
+        tb.lead(
+            "Smaller or less consistent changes. Arena events at Climate Pledge Arena and most "
+            "games at T-Mobile Park did not change calls much at the nearest stations."
+        )
     )

@@ -22,14 +22,27 @@ Open the local address printed by Streamlit. It is usually
 The app has three tabs:
 
 1. **Prediction** - choose a date, see the citywide estimate and the stations
-   to watch, click up to 3 station areas on the map to compare them, and
-   download the table.
-2. **Explore** - three sub-tabs of past patterns: **Citywide** (map, last 90
+   to watch, pick up to 3 stations on the map or in the ranked table to compare
+   them, and download the table.
+2. **Explore** - four sub-tabs of past patterns: **Citywide** (map, last 90
    days, weekday, month and call type), **Stations** (station-area map; click
-   up to 3 areas to compare them) and **Events** (how calls changed near the
-   venues on past event days).
-3. **Data and limits** - read the source, definitions, left-out data and
+   up to 3 areas to compare them), **Events** (how calls changed near the
+   venues on past event days) and **Weather** (calls on cold and hot days,
+   during cold spells and in past weather events).
+3. **About** - read the source, definitions, left-out data and
    limitations.
+
+The tabs sit in a rounded bar, each with a small outline icon above its name.
+The open tab sits on a white tile that slides to the tab you click. Explore's
+views use the same bar one size smaller, and its call type and share pickers
+carry matching icons (`static/tab_icons/`, drawn as one set on a 24 px grid).
+Buttons, tabs, table cells and the pop-up X lift 1 px under the mouse and
+press in when clicked. Phones get the press only, and with reduced motion
+turned on in the system settings nothing moves.
+
+All text is in Figtree. The sentences that talk to the reader, such as the
+briefing, the weather alerts and the event warnings, are in Lexend. Numbers
+and the table always stay in Figtree.
 
 ![Forecast screen](walkthrough_images/01_forecast.jpg)
 
@@ -37,8 +50,24 @@ The main code files are:
 
 * [`app.py`](../app.py) builds the Streamlit page and chart elements.
 * [`station_forecast.py`](../station_forecast.py) holds the Prediction tab's
-  small calculations: the watch list, the map shades, the call type mix, the
-  click handling and the "Data through" line.
+  small calculations: the shift briefing, range-bar bounds, watch list, map
+  shades, call type mix, the ranked table rows and download, click handling
+  and "Data through" line.
+* [`prediction_cards.py`](../prediction_cards.py) builds the HTML for the
+  briefing callout, range bars and map legend.
+* [`chart_theme.py`](../chart_theme.py) holds the colours, fonts and chart
+  builders that the Prediction and Explore charts share. Every colour is one of
+  six palette colours or a lighter or darker step of one. `style.css` gets them
+  as CSS variables, and `.streamlit/config.toml` repeats them (a test checks
+  they match).
+* [`ui_sounds.py`](../ui_sounds.py) plays the soft UI sounds in
+  `static/sounds/`: a hover tick and a click only on buttons, tabs, a
+  clickable map area and the table cells that tick a station or open its
+  window (the date box, the compare list and plain text stay silent), and the
+  studio's click out when a window is closed by its X, Esc or a click
+  outside. Nothing plays before the first click, because
+  browsers block sound until then. With sound off or blocked the app works the
+  same.
 * [`app_data.py`](../app_data.py) reads CSVs, checks data, computes the usual
   calls and invokes the saved model.
 * [`predict.py`](../predict.py) loads the saved GBM and transforms 34 feature
@@ -126,26 +155,32 @@ finished at the Thursday morning planning time.
 
 The date picker starts at January 3, 2026. It ends at the last row of
 `forecast_features.csv`, 90 days after the last day of counts: currently
-January 26, 2027. The sidebar says so under the picker: "Estimates are
-available up to Jan 26, 2027." If a later date reaches `learned_predictions()`,
+January 26, 2027. The top bar says so beside the picker: "Estimates are
+available up to Jan 26, 2027." and opens on today's Seattle date clamped inside
+that range (the examples below use October 24). If a later date reaches `learned_predictions()`,
 it answers "No estimate for this date yet: estimates go up to Jan 26, 2027."
 
 Thirteen historical shifts have missing model-input rows:
 January 9; March 20; April 23; May 7; June 13; July 17, 19, 20, 22, 24 and
-25; August 20; and September 17. For one of those dates, the app displays:
+25; August 20; and September 17. For one of those dates, the briefing is the
+only message. On Friday January 9, 2026 it says:
 
 ```text
-No estimate for this date: the call data for this shift has a gap.
+Friday has no call estimate because the call data for this shift has a gap.
 ```
 
-The app still knows station locations and may show history where available.
+Beside it, the station-area map stays the same shape, with every area in one
+pale sage shade and its station number only; pointing at an area says "No
+estimate for this shift". Clicks still pick up to 3 stations for the next date.
+One note points to the Explore tab for past calls, next to the two link chips.
 
 ## 4. The normal Saturday example
 
-![Ranked table and download](walkthrough_images/03_table_download.jpg)
+![Ranked table](walkthrough_images/03_table_download.jpg)
 
-Leave the date at October 24 and pick SFD 10 (click its area on the map or
-choose it in the list under the map). The page calculates:
+Leave the date at October 24 and pick SFD 10 (click its area on the map, tick
+its row in the table, or choose it in the list under the map). The page
+calculates:
 
 | Card or column | Value | Meaning |
 |---|---:|---|
@@ -269,34 +304,46 @@ does not update from clicks in the app.
 
 ![Three stations picked](walkthrough_images/02_station_selection.jpg)
 
-The sidebar has only the date and the planning time. Stations are picked in
-the Prediction tab, in either of two places that stay in step:
+The top bar has the shift date and the planning time (no side panel). Stations are picked in
+the Prediction tab, in any of three places that stay in step:
 
 * click a station area on the map (a second click on a picked area removes
   it),
+* tick a station's row in the ranked table (untick it to remove it),
 * or choose stations in the "Compare stations (up to 3)" list under the map,
   which works with a keyboard and on a phone.
 
-The list is the one place the picks are kept. The map only reports clicks:
-each click picks or unpicks one station. Three stations is the limit. A
-fourth click on the map is refused with a message ("Up to 3 stations can be
-compared at once ..."), and the list stops at three.
+The list is the one place the picks are kept. The map and the table only
+report clicks: each click or tick picks or unpicks one station. Three stations
+is the limit. A fourth click on the map or a fourth ticked row is refused with
+a message ("Up to 3 stations can be compared at once ..."), the refused row is
+unticked again, and the list stops at three. The message shows next to where
+the click came from: above the map or above the table.
 
-Nothing is picked at first. The page then shows the citywide card, the map,
-the citywide call type mix and the ranked table. With stations picked it adds
-a "Comparing ..." block with one card per station: expected calls and the
-difference from usual, the likely range, the usual for this weekday and any
-event warning for that station. The station list is generated from
-`sfd_stations.csv` and ordered numerically. The page does not rerun the model
-for only one station: `learned_predictions()` calculates all 34 stations once
-per date.
+Nothing is picked at first. On a laptop the map is on the left and, to its
+right, the shift heading, a plain briefing sentence (for October 24:
+"Saturday looks a little busier than usual, spread across the city."), the
+weather line ("Cloudy · Low 6 °C, high 14 °C" with a cloud icon), the weather
+alert or "No weather alerts for this shift.", the "Data through" line, then
+three bordered cards (citywide expected calls with its range bar, the station
+with the biggest rise vs usual (SFD 39 on October 24) with its range bar, and
+stations to watch). Below the map, across the full width, come the call type
+mix, the ranked table and download. A station's history and its hourly
+breakdown open in windows from the table (sections 12 and 13). On a phone everything stacks: briefing and cards first, then the map,
+then the rest. Each range bar marks the likely range as a band, the
+expected count as a circle and the usual weekday average as a vertical tick. With
+stations picked it adds a "Comparing ..." block of bordered cards, one per
+station: expected calls and difference from usual, a range bar showing the
+likely range and usual weekday average, and any event warning for that station.
+The station list is generated from `sfd_stations.csv` and ordered numerically.
+The page does not rerun the model for only one station: `learned_predictions()`
+calculates all 34 stations once per date.
 
 Picking SFD 2 after SFD 10:
 
 * adds a second card with SFD 2's 31.7 estimate next to SFD 10's 40.0,
-* highlights both rows in the table,
-* keeps the hourly breakdown and the history chart on SFD 10, the first
-  station picked (with nothing picked they show the whole city),
+* ticks both rows in the table and colours their station names lavender and yellow, each
+  with its pick number (1, 2), like their rims on the map, their cards and their tags,
 * leaves the citywide card at 312.8.
 
 The citywide estimate is the sum:
@@ -316,32 +363,49 @@ SFD 2 difference = 31.7 - 32.5 = -0.8
 
 ## 8. The map
 
-The map draws the same station areas as the Explore tab (`station_areas.py`):
-each area is the part of Seattle closer to that station than to any other,
-cut at the city boundary. It is not an official legal dispatch boundary.
-
-Each area is shaded by the expected minus usual calls for that station
-(`difference_fills()` in `station_forecast.py`):
+The Prediction map (`forecast_map()` in `station_areas.py`) draws the real 34
+nearest-station areas cut at the city boundary in a flat, north-up frame
+(`pitch=0`, `bearing=0`) on a pale Carto basemap with nearby town names on
+their real towns (Shoreline, Lake Forest Park, Kirkland, Bellevue, Mercer
+Island, Renton, Tukwila, Burien), white borders between areas,
+station numbers and expected calls written inside areas, and colour showing
+expected minus usual (`difference_fills()` in `station_forecast.py`):
 
 ```text
 difference = expected calls - usual for this weekday
 ```
 
-Blue is quieter than usual, light is about usual and orange is busier. The
+Blue is quieter than usual, cream is about usual and salmon is busier. The
 scale is the same size on both sides and never stretches a gap smaller than 2
-calls to the full colour. Blue and orange stay apart for people with red-green
-colour blindness, and the legend under the map names both ends in words. The
-Explore maps use grey slate shades for history, so a historical average is
-never mistaken for a forecast. Pointing at an area shows its expected calls,
-likely range and usual. Picked areas get a coloured outline (blue, red, gold),
-the same colours as the Explore comparison charts.
+calls to the full colour. Blue and salmon stay apart for people with red-green
+colour blindness, the busier end is darker than the quieter end so the two
+sides also differ in grayscale, and the legend under the map names both ends in
+words. The Explore maps keep their own Carto basemap and sage shades for
+history, so a historical average is never mistaken for a forecast. Pointing at
+an area shows its status in words, expected calls, likely range and usual.
+Picked areas get a coloured rim (1st lavender, 2nd warm yellow, 3rd mint) that
+matches the top border on their comparison card below and the Explore comparison
+charts. Each rim sits on a darker edge of its own hue, so it shows on light and
+salmon areas alike. Labels on the pick colours are dark, and the cards, tags
+and table rows also carry the pick number 1, 2 or 3. The map never moves: no
+drag, zoom or zoom buttons (`FIXED_VIEW` and `MAP_LOCK_JS` in `station_areas.py`),
+so the whole city always shows. `fixed_view()` works out the zoom from the city's
+edges and the town names so they all fit a 360 px phone frame, with at least
+40 px of land above and below the city, and the map's height from the same fit.
+From 1160 px wide the map sits beside the cards and grows to fill the left
+column, so it ends level with them; below that the map's column would be
+narrower than the fit, so the cards come first and the map follows at full
+width.
 
 ### Stations to watch
 
-Above the map, a short list (at most 5) names the stations that are likely
-busier than usual: expected at least 2 calls and at least 10% above usual
-(`WATCH_MIN_EXTRA` and `WATCH_MIN_SHARE`). A smaller gap is inside the normal
-swing from shift to shift. When no station passes, the page says so. A rule
+The third card names at most 5 stations that are likely busier than usual:
+expected at least 2 calls and at least 10% above usual (`WATCH_MIN_EXTRA` and
+`WATCH_MIN_SHARE`). A smaller gap is inside the normal swing from shift to
+shift. A "How they are picked" toggle under the list gives the rule. When no
+station passes, the card says "No station is clearly busier than usual for
+this shift." (October 24). On New Year's Eve, December 31, 2026, it lists SFD
+2, SFD 25, SFD 10 and SFD 5. A rule
 based on the width of the likely range was tried first and found too strict:
 the ranges are about 20 calls wide, so no station passed on any of the test
 dates.
@@ -356,29 +420,50 @@ call type are not in the app because there are too few calls.
 
 ### Data through
 
-Under the heading, "Data through Thu Oct 22 08:00" is the end of the last shift
-finished by the planning time (the Wednesday shift ends Thursday at 08:00).
+Above the cards, a "Data through" tag reads "Thu Oct 22 08:00, the last shift
+finished by the planning time." (the Wednesday shift ends Thursday at 08:00).
 
-Above the ranked table are links to:
-
-* SFD Live for live incident activity.
-* the Seattle Breaking station coverage guide.
+Above the ranked table, one card defines Likely range, Usual and vs usual in
+two columns, notes that the estimate does not include weather or events such
+as games (leaving out any part a weather alert or event note above already
+says), and has two link chips: SFD Live (live incidents) and the Seattle
+Breaking guide (station coverage). Its last row shows how to use the table,
+each hint led by a small picture of the control: tick a row, click the Last
+4 weeks bars or the Expected bar, and what the download keeps.
 
 ## 9. The ranked table
 
-The table sorts all 34 stations from highest to lowest point estimate.
-The downloadable and on-screen columns are:
+The table sorts all 34 stations from highest to lowest point estimate. Tick a
+row to pick that station (see section 7); picked rows are ticked and their
+station name has the station's colour. Over Expected and Last 4 weeks the
+pointer turns into a hand and the row is shaded: clicking Expected opens the
+station's hourly breakdown (section 12) and clicking Last 4 weeks opens its
+history (section 13). The click carries the row's own station name, so every
+row opens its own station. The other cells open nothing. The on-screen
+columns are:
 
 | Column | Calculation |
 |---|---|
 | Station | station name |
-| Expected calls | GBM prediction, one decimal |
-| Low | estimated calls plus the lower past error |
-| High | estimated calls plus the upper past error |
-| Usual for this weekday | earlier matching weekday average |
-| Difference | Expected calls minus usual |
+| Expected | GBM prediction, one decimal, with a bar from 0 to the busiest station |
+| Likely range | Low to High, for example "31 to 50" for SFD 10 on October 24 |
+| vs usual | Expected minus usual: ▲ above usual in salmon, ▼ below in light blue (strong colour from 2 calls) |
+| Last 4 weeks | 28 bars, one per shift, each one solid colour, oldest on the left: the 28 days up to the last shift finished at the planning time (Sep 24 to Oct 21 for October 24, planned Thursday October 22). Each bar's colour also follows its calls, on the same scale in every row: lighter mint for fewer calls, through cream and peach, to rose for more (a tiny legend under the heading shows it). All rows share one scale. Point at a bar for its date and count; the shift's weekday says so, for example "Sat Oct 17, same weekday: 41 calls" (SFD 10's Saturdays Sep 26, Oct 3, Oct 10 and Oct 17 had 36, 46, 37 and 41). The bars fill the column: about 20 px wide on a laptop, 5 px on a phone |
 
-The Low and High columns are not generated by the GBM. They come from past
+The Last 4 weeks bars follow the date. A day after the last day of data
+(October 28, 2026) has no real calls, so its bar is the app's own estimate for
+that shift, drawn a little lighter, and the heading says "estimated after Oct 28". For
+November 27 the bars run from October 28 to November 24: only October 28 is
+real and the other 27 days are estimates. A day with a data gap has no bar,
+only a flat line.
+
+The usual for this weekday is no longer a column: it is in vs usual, the
+history window and the download.
+
+The download keeps the earlier columns: Expected calls, Low, High, Usual for
+this weekday and Difference (see section 11).
+
+The Low and High values are not generated by the GBM. They come from past
 prediction errors.
 
 ## 10. How the likely range is calculated
@@ -468,7 +553,8 @@ callcast_counts_2026-10-24.csv
 
 The download includes:
 
-* the displayed station table,
+* all 34 stations in the table, with Low and High as two columns instead of
+  the on-screen "Likely range" (the Last 4 weeks bars are not in the file),
 * point estimates rounded to one decimal,
 * usual calls rounded to one decimal,
 * Low and High,
@@ -481,9 +567,12 @@ model prediction.
 
 ## 12. Hourly breakdown
 
-![Hourly breakdown and history](walkthrough_images/04_hourly_history.jpg)
+![Hourly breakdown](walkthrough_images/04_hourly_history.jpg)
 
-Open **Hourly breakdown** under the table.
+Click a station's Expected bar in the table. A window opens with that
+station's hourly breakdown; it closes on a click outside it, Esc or the X.
+**Citywide hourly breakdown** next to the download button opens the same
+window for the whole city.
 
 The app loads [`hourly_profile.csv`](../data/hourly_profile.csv). Each row
 contains:
@@ -520,30 +609,46 @@ On daylight-saving transition shifts:
 * a fall shift can be 25 hours,
 * the usual 24-hour share table is not valid.
 
-October 31, 2026 is a 25-hour shift, so the app replaces the chart with a
-plain message.
+October 31, 2026 is a 25-hour shift, so the window shows a plain message
+instead of the chart.
 
-## 13. The history line
+## 13. The history window
 
-Below the prediction area, the app selects the first picked station (or adds
-up all stations when none is picked) and builds a 90-day known-history line
-ending at the last shift completed by the planning time.
+![History window for SFD 10](walkthrough_images/11_history_window.jpg)
 
-On October 24:
+Click a station's Last 4 weeks bars in the table.
+A window opens over the page with that station's history known at the
+planning time. It closes on a click outside it, Esc or the X. Ticking rows
+is unchanged: the window never picks or unpicks a station.
+
+On October 24 for SFD 10:
 
 ```text
 planning time: October 22 at 08:00
 latest complete shift: October 21
+Last 4 Saturdays: 36, 46, 37, 41.
+Expected 40.0 on Sat Oct 24 (likely 31 to 50); usual for a Saturday 38.9.
 ```
 
-The chart fills missing calendar dates with blanks:
+The chart opens on the last 4 weeks; the buttons switch to 3 months or all.
 
-* gap = shift with missing or masked data,
-* 0 = real zero-call shift,
-* value = actual calls in the count table.
+* the line is calls per shift; a missing or masked shift (Aug 20 and Sep 17,
+  2026 for SFD 10) is a faint dashed bridge between its neighbours, with no dot,
+  and pointing at it says "No data for this shift (data feed gap)" (a 0 is a
+  real zero-call shift),
+* dots mark the same weekday as the target; on 4 weeks they carry their counts,
+* the dotted line is the usual for that weekday,
+* the right panel shows the target shift: the expected calls and the likely
+  range as a whisker, in the busier or quieter colour of the station's card,
+* "All" fades the daily line and adds a 4-week average.
 
-The line is historical context. It does not feed the GBM's point prediction
-and it does not change the citywide total.
+The right panel has its own axis, so a date far past the data (December 20)
+does not squash the line. Then a third line says how old the newest known
+shift is ("The newest known shift is Wed Oct 28, 53 days earlier.").
+
+The window is historical context. It does not feed the GBM's point
+prediction and it does not change the citywide total. On a date with a data
+gap there is no table, so past calls are on the Explore tab.
 
 ## 14. Explore tab
 
@@ -553,7 +658,7 @@ note at the top says which shifts it uses. For a date more than 3 days past
 the last counts, the note becomes a blue info box: every later date shows the
 same history until new calls are added.
 
-Explore has three sub-tabs. Every chart has a one-line caption on how to read
+Explore has four sub-tabs. Every chart has a one-line caption on how to read
 it.
 
 ### Citywide
@@ -588,23 +693,53 @@ from `data/event_effects.csv` and `data/event_shifts.csv`, made by
 change with the selected date. The call types are for browsing past incident
 mix only. The model uses total calls, not separate category targets.
 
-## 15. Data and limits tab
+### Weather
 
-![Data and limits](walkthrough_images/08_data_limits.jpg)
+Three charts of how citywide calls changed with the weather
+(`weather_explore.py`, from `data/weather_effects.csv`,
+`data/weather_events.csv` and `data/weather_event_shifts.csv`, made by
+`scripts/make_weather_effects.py`). Each compares calls with a usual day: the
+same weekday up to 4 weeks before and after, without extreme-weather days and
+holidays. The numbers use 2022 to 2025 and do not change with the selected
+date. The charts share the look of the other Explore charts (`chart_theme.py`),
+with muted blue for cold groups, sage for mild and brick for hot.
 
-The text tab explains:
+* Calls on cold and hot days: one bar per temperature group, from the
+  coldest lows to the hottest highs. Holidays are left out.
+* Calls during a cold spell: a single cold day, then day 1, 2, 3 and 4 or
+  later of a spell (2 or more days in a row below freezing).
+* Past weather events: pick one of four events (December 2022 cold, snow
+  and ice; January 2024 cold snap; July 2022 heat wave; November 2024
+  windstorm). The line shows each day's citywide calls from a week before to
+  a week after, the dashed line the usual level, and the shaded days the
+  event. The dates were checked in the weather data.
 
-* what the station numbers mean,
-* what the station area approximation is,
-* how the likely range was calculated,
-* why the range is not a staffing recommendation,
-* which practice and duplicate records were removed,
-* why two call types stopped after May 31, 2025,
-* that masked shifts are missing-data shifts, and
-* that the app does not know unit availability, call length or travel time.
+![Explore Weather](walkthrough_images/09_explore_weather.jpg)
 
-It also links to the 911 public source and the SFD Live and Seattle Breaking
-resources.
+## 15. About tab
+
+![About](walkthrough_images/08_data_limits.jpg)
+
+The About tab is text only, in six cards set two to a row. Each card puts a
+bold label beside its plain answer, with a short muted note where needed:
+
+* The Sources card names the 911 calls (Seattle Real Time Fire 911 Calls) and station
+  locations (Seattle GIS), link chips to the 911 dataset, SFD Live and the
+  Seattle Breaking guide, and a note that this is a fixed set of past calls,
+  not live 911 data.
+* What the numbers mean explains each number, station area (the area closest to
+  that station, so its edges are approximate), usual for this weekday and
+  planning time.
+* About the likely range says about 4 in 5 station shifts and about 7 in 10
+  citywide totals landed inside it in 2025, and it does not say how many units
+  to send.
+* Dates far ahead says estimates go up to 90 days after the last data, and
+  more than 3 days after it they are long-range estimates.
+* What is left out lists practice calls (TEST), duplicate follow-up records
+  (Fast Back Up), two referral types that stopped being recorded after May
+  2025, and data gaps.
+* What the numbers don't show: how long a call takes, which units are free
+  or travel time. Staffing is the supervisor's decision.
 
 ## 16. Forecast dates
 
@@ -637,7 +772,7 @@ dates it probably holds less often.
 
 ## 16b. Event warnings
 
-For SFD 10 and SFD 22, the Prediction tab shows a yellow warning in that
+For SFD 10 and SFD 22, the Prediction tab shows a gold warning in that
 station's card, once the station is picked, when a big event falls on the
 shift (`event_warnings.py`, from
 `data/events.csv` and `data/concerts.csv`):
@@ -646,10 +781,65 @@ shift (`event_warnings.py`, from
 * stadium concert at Lumen Field: SFD 10,
 * Husky football home game at Husky Stadium: SFD 22.
 
-The warning does not change the estimate or the range. A caption under it
-says "Event warnings are informational and are not included in the
-forecast." Every estimate also says "The estimate does not include weather or
-events such as games."
+The warning does not change the estimate or the range. One note under the
+cards says "Event warnings are informational and are not included in the
+forecast.", even when more than one card has a warning. The card above the
+ranked table then only says "The estimate does not include weather.", so the
+event part is said once.
+
+## 16c. Weather alerts
+
+Weather is one forecast for the whole city, so the alert sits right under the
+shift briefing, above the summary cards (on a phone it stays under the
+briefing too). When the forecast for the shift has strong wind (gusts of
+65 km/h or more) or hard cold (a low of -3 °C or colder, or -1 °C or colder on
+2 or more days in a row), it shows a gold warning, the same kind as the
+event warnings in the station cards. The thresholds come from Step 15 in the
+README. The text is plain, with no percentages, for example "Strong wind is
+forecast for this shift. Windstorms usually bring more calls than usual." on
+March 11, 2026. Each alert line has its own icon at the left: a windsock for
+strong wind, a snowflake for a hard freeze and a thermometer for a cold spell.
+A note under it says "Weather alerts are informational and are not included
+in the forecast. Forecasts a few days ahead often change."
+
+![Weather alert](walkthrough_images/10_weather_alert.jpg)
+
+Between the briefing and the alert, a small weather line shows one icon for
+the shift (thunder, snow, sleet, heavy rain, rain, fog, strong wind, cloudy,
+partly cloudy or sunny: the most notable one in any hour of the shift), its
+low and high, and the rain (mm) or snow (cm) when above zero
+(`weather_now.py`). It uses the same forecast as the alert, so a date without
+a forecast has no line, and it never changes the estimate. The weather icons,
+the alert icons and the NWS logo are local files in `static/weather_icons/`
+that are not in git; without them the line and the alerts show their words
+only.
+
+`weather_alerts.py` picks the forecast that was known at the planning time:
+
+* dates with a saved forecast (to October 29, 2026) use the day-3 forecast in
+  `data/weather_hourly_gfs_global_day3.csv`;
+* later dates whose planning time has passed download that same day-3
+  forecast from Open-Meteo's archive;
+* dates still ahead use the latest Open-Meteo forecast (`gfs_seamless`), but
+  only when the shift ends within 4 days.
+
+A download waits at most 3 seconds to connect and 5 to read, a good answer is
+kept for an hour, and after a failed one the app shows "unavailable" for 5
+minutes before trying again, so clicks on the map stay quick without a
+network (or in Docker without internet).
+
+Without an alert, a caption says "No weather alerts for this shift.", "No
+weather forecast available yet. Weather alerts appear about 4 days before the
+shift." or, if the forecast cannot be read, "Weather forecast unavailable right
+now." Like event warnings, weather alerts never change the estimate or the
+range.
+
+For every shift that is not over yet and ends within 4 days, one more caption
+points to the official watches and warnings, with or without an alert: "For
+snow, ice and the latest official watches and warnings, check the National
+Weather Service: NWS Seattle." with the NWS logo in front of it (for example
+November 28, 2026, picked on November 27). It is only a link to
+https://www.weather.gov/sew/; the app does not call the NWS API.
 
 ## 17. What the app does not do
 
@@ -698,10 +888,17 @@ predictions. It does not run `.fit()` or retrain on the supervisor's clicks.
 
 1. Start at October 24 and pick SFD 10 on the map. Confirm 312.8 citywide and 40.0 for SFD 10.
 2. Pick SFD 2 too. Confirm that the citywide number stays 312.8 and a second card shows 31.7. Pick two more stations: the fourth is refused with a message.
-3. Open the table and verify that the highest estimate appears first.
+3. Open the table and verify that the highest estimate appears first. Tick SFD 25's row: it is
+   picked like a map click. Tick a fourth row: it is refused and unticked.
 4. Pick October 29. Confirm it is labelled Forecast and has a planning time of October 27 at 08:00.
-5. Pick October 31. Confirm the hourly note instead of 24 hourly bars.
+5. Pick October 31 and click SFD 10's Expected bar. Confirm the hourly note instead of 24 hourly bars.
 6. Pick October 25 and SFD 10. Confirm the Seahawks warning; remove SFD 10, pick SFD 5 and confirm it is gone.
-7. Open Explore. On Citywide pick Medical, on Stations click two areas to compare them, then open Events.
-8. Open Data and limits and locate each source and limitation.
-9. Download a table and compare its values with the on-screen table.
+7. Pick March 11. Confirm the strong-wind alert with its windsock icon under the briefing (with internet, November 7 shows one too).
+   Pick a date in the next 4 days (November 28, 2026 on November 27): the NWS Seattle note shows with the NWS logo.
+   Pick December 31 for a filled Stations to watch card, and January 9, 2026 for the data-gap briefing.
+8. Open Explore. On Citywide pick Medical, on Stations click two areas to compare them, then open Events and Weather.
+9. Open About and locate each source and limitation.
+10. Download a table and compare its values with the on-screen table.
+11. With sound on, click once anywhere, then point at a tab, a map area and a table cell: each
+    gives one soft tick. The date box and the compare list stay silent. Click Last 4 weeks and
+    close the window with Esc: one click, then one click out.

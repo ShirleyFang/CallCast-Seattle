@@ -10,10 +10,11 @@ import numpy as np
 import pandas as pd
 
 from app_data import known_history, load_tables
+from text_blocks import plain
+from chart_theme import DAY_STOPS, PANEL_BG, ROSE_LINE, history_line_chart, mix, ramp
 from station_areas import AREA_LAYER_ID, area_selection, selected_stations
 from station_compare import (
     AVERAGE,
-    BAR_COLOR,
     CALL_TYPES,
     CITY,
     CITY_COLOR,
@@ -118,18 +119,46 @@ class CompareTests(unittest.TestCase):
         colors = dict(zip(bars.x, bars.marker.color))
         self.assertEqual(colors["SFD 10"], COLORS[0])
         self.assertEqual(colors["SFD 2"], COLORS[1])
-        self.assertEqual(colors["SFD 41"], BAR_COLOR)
-        self.assertEqual(set(station_bar_chart(means).data[0].marker.color), {BAR_COLOR})
+        # The rest sit on the mint-to-rose scale: the busiest station rose, the quietest mint.
+        plain = dict(zip(ids, station_bar_chart(means).data[0].marker.color))
+        self.assertEqual(plain[means.idxmax()], DAY_STOPS[-1])
+        self.assertEqual(plain[means.idxmin()], ramp(DAY_STOPS, means.min() / means.max()))
 
-    def test_citywide_charts_use_the_neutral_colour(self):
-        # Colour means a picked station; the whole city is drawn in slate.
+    def test_citywide_charts_use_the_rose_line_and_day_scale(self):
+        # Pick colours mean a picked station; the whole city is a deep rose line over the
+        # mint-to-rose fill, and its weekday bars are on that scale, the busiest rose.
         city = citywide(self.history)
-        line = trend_chart(trend(city, [CITY], average=False)).data[0]
-        bars = weekday_chart(weekday_means(city, [CITY], average=False)).data[0]
-        self.assertEqual(line.line.color, CITY_COLOR)
-        self.assertEqual(bars.marker.color, CITY_COLOR)
+        fig = trend_chart(trend(city, [CITY], average=False))
+        line = next(t for t in fig.data if t.name == CITY)
+        self.assertEqual((line.line.color, line.line.width), (ROSE_LINE, 3))
+        self.assertEqual(next(t for t in fig.data if t.fill == "tozeroy").fillgradient.type, "vertical")
+        means = weekday_means(city, [CITY], average=False)[CITY]
+        bars = weekday_chart(means.to_frame()).data[0]
+        self.assertEqual(bars.marker.color[list(means.index).index(means.idxmax())], DAY_STOPS[-1])
+        # The quietest weekday is mint, so close averages still span the whole scale.
+        self.assertEqual(bars.marker.color[list(means.index).index(means.idxmin())], DAY_STOPS[0])
+        self.assertEqual(CITY_COLOR, ROSE_LINE)
         self.assertNotIn(CITY_COLOR, COLORS)
-        self.assertNotIn(BAR_COLOR, COLORS)
+
+    def test_missing_shift_is_a_dashed_bridge_under_one_fill(self):
+        # Oct 3 is missing: one fill runs Oct 1-5, a dashed line joins Oct 2 (12) and Oct 4 (11),
+        # and the main line still has no value on Oct 3.
+        days = pd.date_range("2026-10-01", periods=5)
+        fig = history_line_chart(pd.Series([10, 12, np.nan, 11, 9.0], index=days))
+        fills = [t for t in fig.data if t.fill == "tozeroy"]
+        self.assertEqual([list(t.x) for t in fills], [list(days)])
+        bridge = next(t for t in fig.data if t.line.dash == "dash")
+        self.assertEqual(list(bridge.x[:2]), [days[1], days[3]])
+        # The bridge is the rose line made half way to the panel; the fill is the day scale.
+        self.assertEqual(bridge.line.color, mix(ROSE_LINE, PANEL_BG, 0.5))
+        self.assertEqual(fills[0].fillgradient.colorscale[-1][1], "rgba(223, 159, 163, 0.8)")
+        self.assertEqual(list(bridge.y[:2]), [12, 11])
+        gap = next(t for t in fig.data if t.name == "No data")
+        self.assertEqual(list(gap.x), [days[2]])
+        self.assertEqual(gap.marker.opacity, 0)
+        self.assertIn("No data for this shift (data feed gap)", gap.hovertemplate)
+        self.assertTrue(np.isnan(fig.data[-1].y[2]))
+        self.assertIsNone(fig.data[-1].fill)
 
     def test_monthly_means_per_station(self):
         # The long-term view the sidebar-station chart used to show, now per picked station.
@@ -177,15 +206,25 @@ class CompareTests(unittest.TestCase):
 
     def test_map_colours_match_the_chart_colours(self):
         self.assertEqual(station_color(PICKED, "SFD 2"), COLORS[1])
-        self.assertEqual(station_color(PICKED, "SFD 10", alpha=150), [47, 93, 138, 150])
+        # Lavender #BCA7ED, the 1st pick, as an RGBA list for the map.
+        self.assertEqual(station_color(PICKED, "SFD 10", alpha=150), [188, 167, 237, 150])
 
 
 class CitywideScreenTests(unittest.TestCase):
+    def setUp(self):
+        import os
+        from unittest import mock
+
+        patcher = mock.patch.dict(os.environ, {"CALLCAST_TODAY": "2026-10-24"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_citywide_tab_ignores_the_stations_picked_in_prediction(self):
         # Explore starts with the whole city; stations picked in the Prediction tab stay there.
         import os
 
         os.environ.setdefault("STREAMLIT_LOGGER_LEVEL", "error")
+        os.environ.setdefault("CALLCAST_OFFLINE", "1")  # also in tests/__init__.py
         from streamlit.testing.v1 import AppTest
 
         from app_data import ROOT
@@ -202,12 +241,14 @@ class CitywideScreenTests(unittest.TestCase):
         pd.testing.assert_frame_equal(before, citywide_table(app))
         # With nothing picked on the map, the Stations tab points to the map.
         stations = next(t for t in app.tabs if t.label == "Stations")
-        self.assertTrue(any("Click up to 3 station areas" in i.value for i in stations.info))
+        hint = " ".join(plain(h.value) for h in stations.get("html"))
+        self.assertIn("Click up to 3 station areas", hint)
 
     def test_citywide_follows_the_chosen_call_type(self):
         import os
 
         os.environ.setdefault("STREAMLIT_LOGGER_LEVEL", "error")
+        os.environ.setdefault("CALLCAST_OFFLINE", "1")  # also in tests/__init__.py
         from streamlit.testing.v1 import AppTest
 
         from app_data import ROOT
@@ -219,7 +260,8 @@ class CitywideScreenTests(unittest.TestCase):
         def trend_traces():
             city = next(t for t in app.tabs if t.label == "Citywide")
             figure = json.loads(city.get("plotly_chart")[0].proto.spec)
-            return [(t.get("name"), t.get("stackgroup")) for t in figure["data"]]
+            # Unnamed traces are only the light fills under a line.
+            return [(t.get("name"), t.get("stackgroup")) for t in figure["data"] if t.get("name")]
 
         # All calls: one stacked band per call type plus the all-calls outline.
         self.assertEqual([n for n, g in trend_traces() if g], ["Medical", "Fire", "Other", "Non-emergency"])
@@ -233,12 +275,17 @@ class CitywideScreenTests(unittest.TestCase):
         self.assertAlmostEqual(table.loc[CITY, "All history"], round(fire.mean(), 1))
         titles = " ".join(m.value for m in city.markdown)
         self.assertIn("Average fire calls per shift by station area", titles)
-        caption = next(c.value for c in city.caption if c.value.startswith("Lighter"))
-        self.assertIn("SFD 10 (6.5)", caption)  # the most fire calls per shift
+        caption = next(
+            t for t in map(plain, (h.value for h in city.get("html"))) if t.startswith("Lighter")
+        )
+        self.assertIn("Most SFD 10 (6.5)", caption)  # the most fire calls per shift
         # The Stations map is shaded by fire share; SoDo (SFD 14) has the highest.
         stations = next(t for t in app.tabs if t.label == "Stations")
-        share_note = next(c.value for c in stations.caption if c.value.startswith("Darker"))
-        self.assertIn("Highest: SFD 14 (27%)", share_note)
+        share_note = next(
+            t for t in map(plain, (h.value for h in stations.get("html")))
+            if t.startswith("Rose")
+        )
+        self.assertIn("Highest SFD 14 (27%)", share_note)
 
 
 class SelectionTests(unittest.TestCase):

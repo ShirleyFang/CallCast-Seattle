@@ -23,7 +23,8 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --chown=appuser:appuser .streamlit .streamlit
 COPY --chown=appuser:appuser models models
 COPY --chown=appuser:appuser data data
-COPY --chown=appuser:appuser scripts/cv_utils.py scripts/feature_sets.py scripts/
+COPY --chown=appuser:appuser static static
+COPY --chown=appuser:appuser scripts/cv_utils.py scripts/feature_sets.py scripts/weather_utils.py scripts/
 COPY --chown=appuser:appuser *.py style.css model_metadata.json ./
 
 ENV PATH="/app/.venv/bin:$PATH" \

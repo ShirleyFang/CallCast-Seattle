@@ -11,19 +11,33 @@ from datetime import date
 
 import numpy as np
 import pandas as pd
-from shapely import Point
+from shapely import Point, box, transform
 from sklearn.neighbors import BallTree
 
 os.environ.setdefault("STREAMLIT_LOGGER_LEVEL", "error")
+os.environ.setdefault("CALLCAST_OFFLINE", "1")  # also in tests/__init__.py
 
 from streamlit.testing.v1 import AppTest
 
 from app_data import ROOT, known_history, load_tables
+from chart_theme import DAY_STOPS, rgb
+from text_blocks import plain
 from station_areas import (
+    AREA_LAYER_ID,
+    CITY_PAD_Y,
+    MAP_MIN_WIDTH,
+    MAP_PAD,
+    NEARBY_PLACES,
     area_features,
+    area_geometries,
     area_km2,
+    area_labels,
     build_station_areas,
+    fixed_view,
+    label_size,
+    forecast_map,
     load_boundary,
+    mercator,
     picked_outline_layers,
     recent_averages,
     shade,
@@ -62,16 +76,16 @@ class StationAreaTests(unittest.TestCase):
         spike_tip = Point(raw.exterior.coords[2])
         self.assertGreater(self.boundary.exterior.distance(spike_tip), 0.001)  # ~200 m in degrees
 
-    def test_shading_runs_from_light_to_dark(self):
+    def test_shading_runs_from_mint_to_rose(self):
+        # Explore maps use the day scale: the fewest calls mint, the most rose.
         fills = shade({"low": 1.0, "mid": 5.0, "high": 9.0})
-        brightness = {k: sum(v[:3]) for k, v in fills.items()}
-        self.assertGreater(brightness["low"], brightness["mid"])
-        self.assertGreater(brightness["mid"], brightness["high"])
-        # The citywide map is view only and colours every area; picked stations elsewhere get
-        # a halo and a coloured outline.
+        self.assertEqual(fills["low"][:3], rgb(DAY_STOPS[0]))
+        self.assertEqual(fills["high"][:3], rgb(DAY_STOPS[-1]))
+        # The citywide map colours every area (clicking one opens its history window in app.py);
+        # picked stations elsewhere get a halo and a coloured outline.
         values = pd.Series({name: float(i) for i, name in enumerate(self.areas)})
         spec = json.loads(value_map(self.areas, self.boundary, values, {}).to_json())
-        areas_layer = next(l for l in spec["layers"] if l["id"] == "city-value-areas")
+        areas_layer = next(l for l in spec["layers"] if l["id"] == AREA_LAYER_ID)
         self.assertEqual(len(areas_layer["data"]["features"]), 34)
         outlines = picked_outline_layers(self.areas, {"SFD 10": [47, 93, 138, 255]})
         self.assertEqual([layer.id for layer in outlines], ["picked-halo", "picked-outline"])
@@ -120,6 +134,98 @@ class StationAreaTests(unittest.TestCase):
         self.assertEqual(props["SFD 10"]["week_dates"], "Oct 15 to Oct 21")
         self.assertEqual(props["SFD 10"]["week_avg"], f"{week:.1f}")
 
+    def test_fixed_view_fits_city_and_town_names_into_the_phone_frame(self):
+        view, height = fixed_view(self.boundary)
+        scale = 2 ** view["zoom"]
+        cx, cy = mercator(view["longitude"], view["latitude"])
+
+        def to_px(lon, lat):
+            x, y = mercator(lon, lat)
+            return (x - cx) * scale + MAP_MIN_WIDTH / 2, (y - cy) * scale + height / 2
+
+        # The whole city is inside, with at least CITY_PAD_Y px of land above and below it.
+        w, s, e, n = self.boundary.bounds
+        (left, top), (right, bottom) = to_px(w, n), to_px(e, s)
+        self.assertGreaterEqual(left, MAP_PAD - 0.01)
+        self.assertLessEqual(right, MAP_MIN_WIDTH - MAP_PAD + 0.01)
+        self.assertGreaterEqual(top, CITY_PAD_Y)
+        self.assertLessEqual(bottom, height - CITY_PAD_Y)
+        # Each town name sits on its town, inside the frame, clear of the station areas, the
+        # other names and the map's info button in the bottom-right corner.
+        city = transform(self.boundary, lambda c: np.array([to_px(*p) for p in c]))
+        info = box(MAP_MIN_WIDTH - 36, height - 36, MAP_MIN_WIDTH, height)
+        names = [t for t, _, _ in NEARBY_PLACES]
+        self.assertTrue({"Shoreline", "Bellevue", "Burien"} <= set(names))
+        boxes = []
+        for name, lon, lat in NEARBY_PLACES:
+            x, y = to_px(lon, lat)
+            wd, ht = label_size(name)
+            label = box(x - wd / 2, y - ht / 2, x + wd / 2, y + ht / 2)
+            self.assertTrue(box(0, 0, MAP_MIN_WIDTH, height).contains(label), name)
+            self.assertGreater(label.distance(city), 3, name)
+            self.assertGreater(label.distance(info), 3, name)
+            self.assertTrue(all(label.distance(other) > 2 for other in boxes), name)
+            boxes.append(label)
+
+    def test_forecast_map_is_flat_fixed_on_pale_basemap_and_labels_areas(self):
+        geoms, rings = area_geometries(self.areas)
+        labels = area_labels(self.areas)
+        fills = {name: [200, 100, 26, 210] for name in self.areas}
+        expected = {name: 15.0 for name in self.areas}
+        spec = json.loads(
+            forecast_map(
+                geoms, rings, self.boundary, fills, labels, expected=expected,
+                picked_colors={"SFD 10": [47, 93, 138, 255]},
+            ).to_json()
+        )
+        # Streamlit forces the controller on, so the view state itself pins the map: one zoom,
+        # flat, and no drag, wheel, pinch, double-click or key moves.
+        view = spec["initialViewState"]
+        self.assertEqual(view["minZoom"], view["zoom"])
+        self.assertEqual(view["maxZoom"], view["zoom"])
+        self.assertEqual([view["pitch"], view["minPitch"], view["maxPitch"], view["bearing"]], [0] * 4)
+        for flag in ["dragPan", "dragRotate", "scrollZoom", "doubleClickZoom", "touchZoom",
+                     "touchRotate", "keyboard"]:
+            self.assertIs(view[flag], False, flag)
+        # Pale Carto basemap (positron, no key) under our own nearby place names.
+        self.assertEqual(spec["mapProvider"], "carto")
+        self.assertIn("positron-nolabels", spec["mapStyle"])
+        places = next(l for l in spec["layers"] if l["id"] == "nearby-places")
+        self.assertIn("Bellevue", [row["text"] for row in places["data"]])
+        for row in places["data"]:
+            self.assertFalse(self.boundary.contains(Point(row["lon"], row["lat"])), row["text"])
+        areas = next(l for l in spec["layers"] if l.get("pickable"))
+        self.assertFalse(areas["extruded"])
+        self.assertEqual(areas["getLineColor"], [255, 255, 255, 255])
+        self.assertEqual(areas["data"]["features"][0]["properties"]["fill"][3], 255)
+        ids = [l["id"] for l in spec["layers"]]
+        self.assertIn("picked-rim-halo", ids)
+        self.assertIn("picked-rim", ids)
+        self.assertIn("prediction-area-labels", ids)
+        rim = next(l for l in spec["layers"] if l["id"] == "picked-rim")
+        self.assertEqual(rim["data"][0]["path"][0][2], 0.0)
+        label_layer = next(l for l in spec["layers"] if l["id"] == "prediction-area-labels")
+        self.assertEqual(len(label_layer["data"]), 34)
+        for name, row in zip(labels, label_layer["data"]):
+            self.assertTrue(self.areas[name].contains(Point(row["lon"], row["lat"])), name)
+
+    def test_forecast_map_without_fills_is_one_neutral_shade(self):
+        # A date with no estimate: same layers, one pale sage, numbers only, a plain hover card.
+        geoms, rings = area_geometries(self.areas)
+        labels = area_labels(self.areas)
+        deck = forecast_map(geoms, rings, self.boundary, None, labels)
+        spec = json.loads(deck.to_json())
+        areas = next(l for l in spec["layers"] if l.get("pickable"))
+        fills = {tuple(f["properties"]["fill"]) for f in areas["data"]["features"]}
+        self.assertEqual(fills, {(207, 214, 196, 255)})
+        props = areas["data"]["features"][0]["properties"]
+        self.assertEqual(props["status"], "No estimate for this shift")
+        self.assertNotIn("expected", props)
+        label_layer = next(l for l in spec["layers"] if l["id"] == "prediction-area-labels")
+        self.assertTrue(all(row["text"].isdigit() for row in label_layer["data"]))
+        self.assertNotIn("Expected", deck._tooltip["html"])
+        self.assertIn("nearby-places", [l["id"] for l in spec["layers"]])
+
 
 class StationAreaScreenTests(unittest.TestCase):
     def area_map(self, app):
@@ -144,7 +250,7 @@ class StationAreaScreenTests(unittest.TestCase):
         # Outlines only: the city boundary has no fill, and the station areas a nearly clear one.
         city = next(l for l in spec["layers"] if l["@@type"] == "GeoJsonLayer" and not l.get("pickable"))
         self.assertFalse(city["filled"])
-        caption = " ".join(c.value for c in app.tabs[1].caption)
+        caption = " ".join(plain(h.value) for h in app.tabs[1].get("html"))
         self.assertIn("closest to that station", caption)
 
     def test_line_and_dot_sizes_reach_the_browser_as_numbers(self):
@@ -170,7 +276,7 @@ class StationAreaScreenTests(unittest.TestCase):
 
     def test_future_dates_use_the_last_known_week(self):
         app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=60)
-        app.sidebar.date_input[0].set_value(date(2026, 12, 25)).run(timeout=60)
+        app.date_input[0].set_value(date(2026, 12, 25)).run(timeout=60)
         self.assertFalse(app.exception)
         areas = next(l for l in self.area_map(app)["layers"] if l.get("pickable"))
         sfd10 = next(f["properties"] for f in areas["data"]["features"] if f["properties"]["Station"] == "SFD 10")

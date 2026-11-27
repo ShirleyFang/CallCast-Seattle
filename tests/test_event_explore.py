@@ -11,10 +11,13 @@ import numpy as np
 import pandas as pd
 
 os.environ.setdefault("STREAMLIT_LOGGER_LEVEL", "error")
+os.environ.setdefault("CALLCAST_OFFLINE", "1")  # also in tests/__init__.py
 
 from streamlit.testing.v1 import AppTest
 
 from app_data import ROOT
+from text_blocks import plain
+from chart_theme import event_impact_chart
 from event_explore import affected_features, effects_table, load_event_effects, venue_map, venue_rows
 from station_areas import build_station_areas, load_boundary
 
@@ -74,6 +77,14 @@ class EventEffectTests(unittest.TestCase):
         np.testing.assert_allclose(summary["mean"], summary["extra_calls"], atol=0.01)
         np.testing.assert_allclose(self.shifts.calls - self.shifts.usual_calls, self.shifts.difference, atol=0.01)
 
+    def test_impact_chart_has_one_bar_per_row(self):
+        # Stadium concerts at Lumen Field and T-Mobile Park both sit next to SFD 5; each
+        # keeps its own bar, so SFD 5's Lumen bar is +1.55, not the two added (+2.48).
+        bars = event_impact_chart(self.effects).data[0]
+        self.assertEqual(len(set(bars.y)), len(self.effects))
+        lumen = list(bars.y).index("Stadium concert at Lumen Field (SFD 5)")
+        self.assertAlmostEqual(bars.x[lumen], 1.55)
+
     def test_table_uses_plain_names(self):
         table = effects_table(self.effects)
         self.assertEqual(
@@ -123,7 +134,7 @@ class VenueMapTests(unittest.TestCase):
                 if isinstance(value, str) and value.startswith("@@="):
                     self.assertIn(key, allowed, f"{layer['id']}.{key} = {value}")
         labels = next(l for l in spec["layers"] if l["id"] == "event-venue-labels")
-        self.assertEqual(labels["fontFamily"], "Public Sans, Helvetica Neue, Arial, sans-serif")
+        self.assertEqual(labels["fontFamily"], "Figtree, Helvetica Neue, Arial, sans-serif")
 
 
 class EventScreenTests(unittest.TestCase):
@@ -134,18 +145,19 @@ class EventScreenTests(unittest.TestCase):
         self.assertEqual(len(events.get("deck_gl_json_chart")), 1)  # the venue map
         self.assertEqual(len(events.dataframe), 2)
         self.assertEqual(len(events.dataframe[0].value), 3)  # the clear pairs
-        text = " ".join(c.value for c in events.caption)
+        blocks = [plain(h.value) for h in events.get("html")]
+        text = " ".join(blocks)
         self.assertIn("Based on 2022-2025", text)  # the numbers
         self.assertIn("chosen on 2022-2024", text)  # the pair selection
         self.assertNotIn("2026", text)
         self.assertIn("These are averages", text)
         # Unlike Citywide and Stations, the event numbers are fixed and say so.
-        self.assertIn("Past event days from Jan 2022 to Dec 2025", events.caption[0].value)
-        self.assertIn("do not change with the selected date", events.caption[0].value)
+        self.assertIn("Past event days from Jan 2022 to Dec 2025", blocks[0])
+        self.assertIn("do not change with the selected date", blocks[0])
         before = events.dataframe[0].value
         from datetime import date
 
-        app.sidebar.date_input[0].set_value(date(2026, 3, 10)).run(timeout=60)
+        app.date_input[0].set_value(date(2026, 3, 10)).run(timeout=60)
         later = next(t for t in app.tabs if t.label == "Events").dataframe[0].value
         pd.testing.assert_frame_equal(before, later)
 

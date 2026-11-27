@@ -12,7 +12,14 @@ __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 
-# OS
+# OS and editor files
 .DS_Store
+._*
+Thumbs.db
+.vscode/
+.idea/
 
 figures/
+
+# Licensed weather icons, kept local (the app works without them)
+static/weather_icons/

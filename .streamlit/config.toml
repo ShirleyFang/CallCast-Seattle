@@ -1,24 +1,39 @@
 [client]
 toolbarMode = "minimal"
 
+[server]
+# Serves static/ at app/static/ (the UI sounds in static/sounds).
+enableStaticServing = true
+
 [theme]
 base = "light"
-primaryColor = "#A4282B"
-backgroundColor = "#FAF8F5"
-secondaryBackgroundColor = "#EFEBE5"
-textColor = "#1F2A36"
-linkColor = "#1F4E79"
-borderColor = "#D6D0C7"
+# Keep in step with chart_theme.py (tests/test_app.py checks every colour here).
+primaryColor = "#A04E38"
+backgroundColor = "#EDF5F1"
+secondaryBackgroundColor = "#DAEBE3"
+textColor = "#263028"
+linkColor = "#2D6675"
+borderColor = "#CFD6C4"
+dataframeBorderColor = "#CFD6C4"
+dataframeHeaderBackgroundColor = "#DAEBE3"
+yellowColor = "#D6AC4E"
+yellowBackgroundColor = "#F8ECD3"
+yellowTextColor = "#6E4E12"
+blueColor = "#62A0B0"
+blueBackgroundColor = "#E1F0F3"
+blueTextColor = "#22525F"
+redColor = "#8A3825"
+redBackgroundColor = "#FBE6DE"
+redTextColor = "#8A3825"
+greenColor = "#4A6B45"
+greenBackgroundColor = "#E3ECDF"
+greenTextColor = "#34502F"
 showWidgetBorder = true
-baseRadius = "0.25rem"
-buttonRadius = "0.25rem"
-font = "Public Sans:https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&display=swap"
-headingFont = "Barlow Semi Condensed:https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&display=swap"
-headingFontWeights = [700, 600, 600, 600, 600, 600]
-chartCategoricalColors = ["#2F5D8A", "#A4282B", "#C99A3B", "#5E7D5A"]
-
-[theme.sidebar]
-backgroundColor = "#1F2A36"
-secondaryBackgroundColor = "#2C3A4A"
-textColor = "#F2EEE8"
-borderColor = "#3A4A5C"
+baseRadius = "0.625rem"
+buttonRadius = "0.5rem"
+# Figtree for all text and headings. Streamlit takes one family per link, so Lexend, for the
+# message sentences, loads at the top of style.css.
+font = "Figtree:https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap"
+headingFont = "Figtree"
+headingFontWeights = [700, 700, 700, 700, 700, 700]
+chartCategoricalColors = ["#BCA7ED", "#F8D66F", "#B5F0DD", "#657166"]
